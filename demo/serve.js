@@ -24,5 +24,8 @@ http
     });
   })
   .listen(PORT, '127.0.0.1', () => {
-    console.log(`Tripwire demo page: http://localhost:${PORT}/`);
+    console.log(`Tripwire demo page:      http://localhost:${PORT}/`);
+    // Chrome resolves any .localhost name to this machine, which gives the
+    // same page a hostname that looks like a paypal lookalike.
+    console.log(`Same page as a lookalike: http://paypa1.localhost:${PORT}/`);
   });

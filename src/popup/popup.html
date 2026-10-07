@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tripwire</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Tripwire</h1>
+    <p id="host" class="host"></p>
+  </header>
+
+  <!-- Shown when the page's own address is suspicious or dangerous. -->
+  <section id="page-alert" class="alert" role="alert" hidden>
+    <strong id="page-alert-title"></strong>
+    <span id="page-alert-reason"></span>
+  </section>
+
+  <p id="unavailable" class="note" hidden>
+    Tripwire isn't running on this page. It works on http and https pages; if this is one, reload it.
+  </p>
+
+  <p id="off-note" class="note" hidden>Tripwire is off for this site. Nothing is scanned here.</p>
+
+  <ul id="counts" class="counts" hidden>
+    <li><strong id="count-scanned">0</strong> links scanned</li>
+    <li class="dangerous"><strong id="count-dangerous">0</strong> risky</li>
+    <li class="suspicious"><strong id="count-suspicious">0</strong> suspicious</li>
+  </ul>
+
+  <section id="site-controls" hidden>
+    <label for="site-mode">On this site</label>
+    <select id="site-mode"></select>
+    <button id="reveal" type="button">Show badges on this page</button>
+  </section>
+
+  <section id="flagged" hidden>
+    <h2>Flagged links</h2>
+    <ol id="flagged-list"></ol>
+    <p class="hint">Click one to scroll to it. The link is not opened.</p>
+  </section>
+
+  <section class="global">
+    <label for="default-mode">Default for all sites</label>
+    <select id="default-mode"></select>
+  </section>
+
+  <script src="../lib/settings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

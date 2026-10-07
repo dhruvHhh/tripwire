@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { analyzeLink, getRegistrableDomain, CONFIG } = require('../src/lib/analyzer.js');
+const { analyzeLink, analyzePage, getRegistrableDomain, CONFIG } = require('../src/lib/analyzer.js');
 
 const BLOG = 'https://blog.example.org/post/1';
 
@@ -80,8 +80,8 @@ const CASES = [
     input: { href: 'https://abc.xyz/investor/', text: 'Alphabet investor relations', pageUrl: BLOG } },
   { name: 'same-site redirector with a domain as text', level: 'ok', reason: /same site/i,
     input: { href: 'https://l.facebook.com/l.php?u=https%3A%2F%2Fnytimes.com%2F', text: 'nytimes.com', pageUrl: 'https://www.facebook.com/' } },
-  { name: 'links between pages of an IP-hosted admin panel', level: 'ok', reason: /same site/i,
-    input: { href: 'http://203.0.113.9/settings', text: 'Settings', pageUrl: 'http://203.0.113.9/' } },
+  { name: 'links between pages of a router admin panel', level: 'ok', reason: /same site/i,
+    input: { href: 'http://192.168.1.1/settings', text: 'Settings', pageUrl: 'http://192.168.1.1/' } },
   { name: 'app deep link has no host to judge', level: 'ok', clean: true,
     input: { href: 'whatsapp://send?text=hello', text: 'Share on WhatsApp', pageUrl: BLOG } },
 
@@ -191,11 +191,100 @@ test('garbage input does not throw and scores nothing', () => {
   }
 });
 
-test('same link on its own site scores lower than on another site', () => {
-  const href = 'http://203.0.113.9/login';
+test('same link on its own (clean) site scores lower than on another site', () => {
+  const href = 'http://old-forum.example.com/thread/42';
   const elsewhere = analyzeLink({ href, pageUrl: BLOG });
-  const sameSite = analyzeLink({ href, pageUrl: 'http://203.0.113.9/' });
+  const sameSite = analyzeLink({ href, pageUrl: 'http://old-forum.example.com/' });
   assert.ok(sameSite.score < elsewhere.score);
+});
+
+// --- Page verdict: same-site links on a page that is itself flagged ----------
+
+const LOOKALIKE_PAGE = 'https://www.paypa1.example/signin';
+const PUBLIC_IP_PAGE = 'http://203.0.113.9/';
+const HOMOGRAPH_PAGE = 'https://xn--pypal-4ve.com/';
+
+const PAGE_CASES = [
+  // Normal sites: same-site links stay green.
+  { name: 'relative link on a normal site', level: 'ok',
+    input: { href: '/pricing', text: 'Pricing', pageUrl: 'https://www.example.com/' } },
+  { name: 'absolute same-site link on a normal site', level: 'ok',
+    input: { href: 'https://docs.example.com/start', text: 'Docs', pageUrl: 'https://www.example.com/' } },
+  { name: 'same-site link on a real brand site', level: 'ok',
+    input: { href: '/myaccount/summary', text: 'Summary', pageUrl: 'https://www.paypal.com/signin' } },
+  { name: 'same-site link on a multi-part-suffix site', level: 'ok',
+    input: { href: 'https://retail.sbi.co.in/login', text: 'Login', pageUrl: 'https://www.sbi.co.in/' } },
+  { name: 'same-site link on a local router page', level: 'ok',
+    input: { href: '/wifi', text: 'Wi-Fi', pageUrl: 'http://192.168.1.1/' } },
+  { name: 'same-site link on a clean single-script IDN site', level: 'ok',
+    input: { href: '/buch/42', text: 'Buch', pageUrl: 'https://xn--bcher-kva.de/' } },
+
+  // Flagged pages: same-site links inherit the page's level.
+  { name: 'relative link on a lookalike page', level: 'dangerous', reason: /this page itself looks dangerous: domain imitates paypal\.com/i,
+    input: { href: '/login', text: 'Log in', pageUrl: LOOKALIKE_PAGE } },
+  { name: 'absolute same-site link on a lookalike page', level: 'dangerous', reason: /this page itself looks dangerous/i,
+    input: { href: 'https://help.paypa1.example/contact', text: 'Help', pageUrl: LOOKALIKE_PAGE } },
+  { name: 'same-site link on a public IP-address page', level: 'suspicious', reason: /this page itself looks suspicious: host is a raw ip address/i,
+    input: { href: '/settings', text: 'Settings', pageUrl: PUBLIC_IP_PAGE } },
+  { name: 'same-site link on a disguised-IP page', level: 'dangerous', reason: /this page itself looks dangerous/i,
+    input: { href: '/next', text: 'Next', pageUrl: 'http://3232235777/' } },
+  { name: 'same-site link on a homograph (punycode) page', level: 'dangerous', reason: /this page itself looks dangerous/i,
+    input: { href: '/konto', text: 'Konto', pageUrl: HOMOGRAPH_PAGE } },
+  { name: 'same-site link on a punycode page served over http', level: 'suspicious', reason: /this page itself looks suspicious/i,
+    input: { href: '/buch/42', text: 'Buch', pageUrl: 'http://xn--bcher-kva.de/' } },
+  { name: 'same-site link on a brand-as-subdomain page', level: 'dangerous', reason: /this page itself looks dangerous/i,
+    input: { href: '/verify', text: 'Verify', pageUrl: 'https://paypal.com.secure-login.example/' } },
+
+  // A flagged page does not taint links that leave it.
+  { name: 'cross-site link from a lookalike page', level: 'ok',
+    input: { href: 'https://en.wikipedia.org/wiki/Phishing', text: 'Phishing', pageUrl: LOOKALIKE_PAGE } },
+];
+
+for (const { name, input, level, reason } of PAGE_CASES) {
+  test(`page verdict, ${level}: ${name}`, () => {
+    const result = analyzeLink(input);
+    const detail = `score ${result.score}, reasons: ${JSON.stringify(result.reasons)}`;
+    assert.equal(result.level, level, detail);
+    if (reason) {
+      assert.ok(result.reasons.some((r) => reason.test(r)), `no reason matches ${reason}; ${detail}`);
+    }
+  });
+}
+
+test('analyzePage scores the page address like a link from elsewhere', () => {
+  assert.deepEqual(analyzePage(LOOKALIKE_PAGE), analyzeLink({ href: LOOKALIKE_PAGE }));
+  assert.equal(analyzePage(LOOKALIKE_PAGE).level, 'dangerous');
+  assert.equal(analyzePage(PUBLIC_IP_PAGE).level, 'suspicious');
+  assert.equal(analyzePage('https://www.example.com/').level, 'ok');
+});
+
+test('a same-site link never scores below its flagged page', () => {
+  for (const pageUrl of [LOOKALIKE_PAGE, PUBLIC_IP_PAGE, HOMOGRAPH_PAGE]) {
+    const page = analyzePage(pageUrl);
+    const link = analyzeLink({ href: '/anything', pageUrl });
+    assert.ok(link.score >= page.score, pageUrl);
+  }
+});
+
+test('a same-site link that is worse than its flagged page keeps its own level', () => {
+  // The page is only suspicious, but this link also hides credentials.
+  const result = analyzeLink({ href: 'http://paypal.com@203.0.113.9/', pageUrl: PUBLIC_IP_PAGE });
+  assert.equal(result.level, 'dangerous');
+  assert.ok(result.reasons.some((r) => /this page itself/i.test(r)));
+  assert.ok(result.reasons.some((r) => /login details/i.test(r)));
+});
+
+test('the page reason replaces duplicates instead of repeating them', () => {
+  const { reasons } = analyzeLink({ href: '/login', pageUrl: LOOKALIKE_PAGE });
+  assert.equal(reasons.length, 1);
+});
+
+test('a pageVerdict passed by the caller is used as given', () => {
+  const pageVerdict = { level: 'dangerous', score: 90, reasons: ['Flagged by the caller'] };
+  const result = analyzeLink({ href: '/x', pageUrl: 'https://www.example.com/', pageVerdict });
+  assert.equal(result.level, 'dangerous');
+  assert.equal(result.score, 90);
+  assert.match(result.reasons[0], /this page itself looks dangerous: flagged by the caller/i);
 });
 
 const DOMAIN_CASES = [

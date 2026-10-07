@@ -18,10 +18,11 @@ function decodeEntities(value) {
     .replace(/&amp;/g, '&');
 }
 
-const LINK_RE = /<a href="([^"]*)" data-expect="(\w+)">([^<]*)<\/a>/g;
-const links = [...html.matchAll(LINK_RE)].map(([, href, expect, text]) => ({
+// A link's content is plain text or a single <img>, which has no text.
+const LINK_RE = /<a href="([^"]*)" data-expect="(\w+)">((?:<img[^>]*>)?[^<]*)<\/a>/g;
+const links = [...html.matchAll(LINK_RE)].map(([, href, expect, content]) => ({
   href: decodeEntities(href),
-  text: decodeEntities(text),
+  text: decodeEntities(content.replace(/<img[^>]*>/, '')),
   expect,
 }));
 
@@ -32,8 +33,21 @@ test('demo page covers all three levels', () => {
 });
 
 for (const { href, text, expect } of links) {
-  test(`demo page: "${text}" -> ${expect}`, () => {
+  test(`demo page: "${text || '(image)'}" -> ${expect}`, () => {
     const result = analyzeLink({ href, text, pageUrl: PAGE_URL });
     assert.equal(result.level, expect, `score ${result.score}, reasons: ${JSON.stringify(result.reasons)}`);
   });
 }
+
+// The page tells the reader to open it as paypa1.localhost to see the
+// lookalike-page behaviour: its same-site links must then be red.
+test('demo page on its lookalike hostname: same-site links turn dangerous', () => {
+  const pageUrl = 'http://paypa1.localhost:8080/';
+  const sameSite = links.filter((link) => link.href.startsWith('/'));
+  assert.ok(sameSite.length >= 2, 'expected relative links on the demo page');
+  for (const { href, text } of sameSite) {
+    const result = analyzeLink({ href, text, pageUrl });
+    assert.equal(result.level, 'dangerous', `${href}: ${JSON.stringify(result.reasons)}`);
+    assert.match(result.reasons[0], /this page itself looks dangerous/i);
+  }
+});

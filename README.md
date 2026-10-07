@@ -1,16 +1,17 @@
 # Tripwire
 
-Tripwire is a Chrome extension that scans every link on a web page and puts a small badge next to each one showing how risky it looks, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
+Tripwire is a Chrome extension that scans every link on a web page and marks the risky ones with a small badge, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
 
-> **Status:** Step 2 (local heuristics). Every link gets a green, amber or red badge from offline checks on the link itself. Tripwire makes no network requests yet.
+> **Status:** version 0.3.0. Links are scored by offline checks on the link itself, and by default only amber and red links are marked. Tripwire makes no network requests yet.
 
 ## Roadmap
 
 1. ✅ **Skeleton:** Manifest V3 extension that puts a neutral badge next to every link.
 2. ✅ **Local heuristics:** score links on-device (lookalike domains, IP hosts, punycode, suspicious TLDs, etc.) and color the badges.
-3. **Dynamic pages and performance:** handle links added after load (MutationObserver) and only process links near the viewport.
+   - ✅ Follow-up: lookalike-page detection, display modes, toolbar count and popup, and badges drawn in an overlay instead of inside the page.
+3. **Dynamic pages and performance:** scan links added after load (MutationObserver) and scan lazily on very large pages.
 4. **Reputation lookups:** check link destinations against external reputation sources via the service worker, with caching.
-5. **UI:** badge tooltips/details, a toolbar popup, and an options page.
+5. **UI:** an options page, richer link details, and managing the per-site list.
 6. **Publish:** polish, privacy policy, and release on the Chrome Web Store.
 
 ## What the badges mean
@@ -21,7 +22,7 @@ Tripwire is a Chrome extension that scans every link on a web page and puts a sm
 | Amber | `suspicious` | Something about the link is unusual. Check where it really goes. |
 | Red | `dangerous` | The link shows a pattern typical of phishing. |
 
-Hover a badge to see the reasons. Each check adds weighted points, and the total decides the level (30 or more is amber, 70 or more is red). A link that stays on the current page's own site has its score cut to a quarter.
+Hover a badge to see the reasons. Each check adds weighted points, and the total decides the level (30 or more is amber, 70 or more is red).
 
 The checks:
 
@@ -33,16 +34,58 @@ The checks:
 - **Brand lookalikes:** look-alike characters (`paypa1`), near-miss spellings, and `brand.com.evil.com` subdomains.
 - **Other signals:** no HTTPS, `data:` URIs, many subdomains, very long URLs, high-abuse TLDs.
 
+**Same-site links and the page's own verdict.** The page's own address is scored once per page load. If it looks fine, a link that stays on the same site has its score cut to a quarter. If the page itself is suspicious or dangerous (for example you are on `paypa1.com`), there is no reduction: its same-site links inherit at least the page's level, with the reason "This page itself looks dangerous: ...".
+
 All weights, thresholds and lists (brands, shorteners, TLDs, domain suffixes) are in the `CONFIG` object at the top of [src/lib/analyzer.js](src/lib/analyzer.js).
 
 Known limits: registrable domains come from a small bundled suffix list, not the full Public Suffix List, and near-miss matching will sometimes flag a real site whose name is one or two letters from a brand (amber, never red on its own).
+
+## Display modes
+
+Tripwire scans every page unless the site is switched off. The mode only decides which badges are drawn.
+
+| Mode | What you see on the page |
+| --- | --- |
+| **Risky only** (default) | Badges on amber and red links. Green links get nothing. |
+| **Show all** | A badge on every link, including green. |
+| **Only when I click** | Nothing, until you press "Show badges on this page" in the popup. |
+| **Off for this site** | Nothing is scanned or drawn on this site. |
+
+There is one global default (any mode except Off) and an optional override per site, both set from the popup. A site is a hostname, so `en.wikipedia.org` and `de.wikipedia.org` are separate. Changes apply immediately, without reloading the page.
+
+"Show badges on this page" is a one-off: it shows every badge until the page reloads or you pick a different mode.
+
+Settings are stored in `chrome.storage.sync`, so they follow your browser profile if sync is on.
+
+## Toolbar icon and popup
+
+The toolbar icon shows a count for the current tab: the number of red links on a red background, or, if there are none, the number of amber links on amber. No number means neither was found.
+
+The popup shows:
+
+- the current site, and a warning if the page's own address looks suspicious or dangerous;
+- how many links were scanned and how many are red and amber;
+- the mode for this site, the one-off "Show badges on this page" button, and the global default;
+- up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link.
+
+## How badges are drawn
+
+Tripwire adds no elements next to your links, so it can't shift a page's layout. Every badge lives in one overlay (`<tripwire-overlay>`, a closed shadow root attached to `<html>`) and is positioned over the top-right corner of its link's first line of text, or of its image for a picture link.
+
+- Only links that are on screen and actually visible get a badge. Links that are hidden, zero-size, scrolled out of a scroll box, or covered by a sticky header or dialog don't.
+- Badges follow their links through page scrolling, scrolling inside nested boxes, resizes, and fixed or sticky headers.
+- The overlay takes no pointer events anywhere, so it can never receive a click meant for the page. Tooltips are shown by watching where the pointer is.
+- When nearby links go to the same address with the same verdict, such as a search result's title and its URL line, they share one badge.
+
+The only thing Tripwire writes into the page itself is a `data-tripwire-processed` attribute on links it has scanned.
 
 ## Load it in Chrome (unpacked)
 
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode** (toggle in the top-right).
 3. Click **Load unpacked** and select this project folder (the one containing `manifest.json`).
-4. Open (or reload) any `http://` or `https://` page. A small colored dot should appear after each link.
+4. Pin Tripwire to the toolbar (puzzle-piece icon, then the pin) so its count is visible.
+5. Open (or reload) any `http://` or `https://` page.
 
 After editing code, click the reload icon on Tripwire's card in `chrome://extensions`, then reload the page you're testing on.
 
@@ -54,30 +97,43 @@ Automated tests use Node's built-in test runner and need no dependencies (Node 2
 node --test
 ```
 
-To see all three badge colors in the browser, serve the demo page and open it with the extension loaded:
+To see the badges, modes and placement in the browser, serve the demo page and open it with the extension loaded:
 
 ```
 node demo/serve.js
 ```
 
-Then open <http://localhost:8080/>. The page has to be served because content scripts don't run on `file://` pages. Its links are grouped by the badge each should get, and clicking is disabled on the page.
+- <http://localhost:8080/> has a mix of green, amber and red links, plus placement tests: a sticky flex nav bar, a scrollable box, an image link, a wrapped link, hidden links and a fixed corner.
+- <http://paypa1.localhost:8080/> is the same page on a hostname that looks like a paypal lookalike (Chrome resolves any `.localhost` name to your own machine). Use it to see the page-verdict behavior.
+
+The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
 
 ## Project structure
 
 ```
 manifest.json              Extension manifest (MV3)
 icons/                     Toolbar / store icons (placeholders)
-src/background/            Service worker
-src/lib/analyzer.js        analyzeLink(): pure, offline link scoring and its config
-src/content/styles.js      Badge CSS (applied inside each badge's Shadow DOM)
-src/content/badge.js       Creates a badge and exposes setVerdict()
-src/content/content.js     Finds links, scores them, inserts badges
-test/                      Tests for the analyzer and the demo page
-demo/                      Demo page with good and bad links, plus a tiny server for it
+src/lib/analyzer.js        analyzeLink() and analyzePage(): pure, offline scoring and its config
+src/lib/settings.js        Display modes, storage keys, message names, toolbar count
+src/lib/geometry.js        Pure helpers: badge and tooltip placement, grouping nearby links
+src/content/styles.js      CSS for the overlay, badges and tooltip
+src/content/badge.js       Creates a badge; exposes setVerdict() and its tooltip
+src/content/overlay.js     The overlay: tracks links, positions badges, shows tooltips
+src/content/content.js     Scans links, applies the mode, answers the popup
+src/popup/                 Toolbar popup
+src/background/            Service worker: sets the toolbar count for each tab
+test/                      Tests for the analyzer, settings, geometry and the demo page
+demo/                      Demo page and a tiny server for it
 ```
 
-Content scripts can't use ES module imports, so the files load in order through the manifest's `js` array and share one global, `Tripwire`. `analyzer.js` also sets `module.exports` so Node can test the same file.
+Content scripts can't use ES module imports, so the files load in order through the manifest's `js` array and share one global, `Tripwire`. The files in `src/lib/` also set `module.exports` so Node can test them directly.
 
 ## Permissions
 
-Tripwire currently requests no permissions. Its content script runs on all `http`/`https` pages, so Chrome will say it can "read and change your data on all websites"; that's needed to place badges next to links.
+| Permission | Why |
+| --- | --- |
+| `storage` | Saves the default display mode and per-site overrides in `chrome.storage.sync`. |
+
+That is the only permission requested. Tripwire does not ask for `tabs` or `activeTab`: the popup only needs the active tab's id, which is available without a permission, and it gets the site's hostname from the content script.
+
+The content script runs on all `http`/`https` pages, so Chrome will say Tripwire can "read and change your data on all websites"; that's needed to scan links and draw badges.

@@ -1,0 +1,260 @@
+:root {
+  color-scheme: light dark;
+  --text: #202124;
+  --muted: #5f6368;
+  --surface: #ffffff;
+  --raised: #f1f3f4;
+  --border: #dadce0;
+  --accent: #1a73e8;
+  --ok: #1e8e3e;
+  --suspicious: #b06000;
+  --suspicious-fill: #f9ab00;
+  --dangerous: #d93025;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --surface: #202124;
+    --raised: #2d2e31;
+    --border: #3c4043;
+    --accent: #8ab4f8;
+    --suspicious: #fdd663;
+    --dangerous: #f28b82;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 320px;
+  margin: 0;
+  padding: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.host {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+h2 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+section,
+.counts {
+  margin-top: 12px;
+}
+
+.note,
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.hint {
+  font-size: 11px;
+}
+
+/* Page verdict */
+.alert {
+  margin-top: 0;
+  padding: 9px 10px;
+  border-left: 4px solid var(--suspicious-fill);
+  border-radius: 4px;
+  background: var(--raised);
+}
+
+.alert strong,
+.alert span {
+  display: block;
+}
+
+.alert span {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.alert.dangerous {
+  border-left-color: var(--dangerous);
+}
+
+.alert.dangerous strong {
+  color: var(--dangerous);
+}
+
+.alert.suspicious strong {
+  color: var(--suspicious);
+}
+
+/* Counts */
+.counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.counts li {
+  padding: 7px 4px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.counts strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.counts .dangerous.nonzero strong {
+  color: var(--dangerous);
+}
+
+.counts .suspicious.nonzero strong {
+  color: var(--suspicious);
+}
+
+/* Controls */
+label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+select,
+button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#reveal {
+  margin-top: 6px;
+}
+
+.global {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Flagged links */
+#flagged-list {
+  /* Chrome caps a popup at 600px tall; keep the whole popup under that. */
+  max-height: 140px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+#flagged-list li + li {
+  margin-top: 4px;
+}
+
+#flagged-list button {
+  display: grid;
+  grid-template-columns: 9px 1fr;
+  column-gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--suspicious-fill);
+}
+
+.dangerous > .dot {
+  background: var(--dangerous);
+}
+
+.link-text,
+.link-destination,
+.link-reason {
+  display: block;
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-text {
+  font-weight: 600;
+}
+
+.link-destination {
+  color: var(--muted);
+}
+
+.link-reason {
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

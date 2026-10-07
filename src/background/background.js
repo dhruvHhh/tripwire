@@ -1,5 +1,32 @@
 // Tripwire service worker.
-// Placeholder for now: later steps will handle reputation lookups and
-// messaging with the content script here.
+//
+// Keeps the toolbar icon's count in step with what each tab's content script
+// found. Content scripts can't call chrome.action themselves, so they send
+// their counts here. Later steps will add reputation lookups.
+
+importScripts('../lib/settings.js');
+
+const { MESSAGES, toolbarBadge } = Tripwire.settings;
 
 console.log('Tripwire service worker started');
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.type !== MESSAGES.COUNTS) return;
+  // Only tabs have a toolbar count; the sender's tab comes with the message,
+  // so no "tabs" permission is needed.
+  if (!sender.tab || typeof sender.tab.id !== 'number') return;
+
+  const tabId = sender.tab.id;
+  const { text, color, textColor } = toolbarBadge({
+    dangerous: Number(message.dangerous) || 0,
+    suspicious: Number(message.suspicious) || 0,
+  });
+
+  // The tab can close before these land; that's not an error worth reporting.
+  const ignore = () => {};
+  chrome.action.setBadgeText({ tabId, text }).catch(ignore);
+  if (text) {
+    chrome.action.setBadgeBackgroundColor({ tabId, color }).catch(ignore);
+    chrome.action.setBadgeTextColor({ tabId, color: textColor }).catch(ignore);
+  }
+});

@@ -479,12 +479,25 @@
     return 'ok';
   }
 
-  function finish(findings, multiplier = 1) {
+  // `multiplier` scales the total (same-site links on a clean page).
+  // `flaggedPage` is the page's own verdict when the link stays on a page that
+  // is itself flagged: the link then inherits at least the page's score.
+  function finish(findings, { multiplier = 1, flaggedPage = null } = {}) {
     findings.sort((a, b) => b.points - a.points);
     const total = findings.reduce((sum, finding) => sum + finding.points, 0);
-    const score = Math.min(CONFIG.maxScore, Math.round(total * multiplier));
-    const reasons = findings.map((finding) => finding.reason);
-    if (multiplier !== 1 && total > 0) {
+    let score = Math.min(CONFIG.maxScore, Math.round(total * multiplier));
+    let reasons = findings.map((finding) => finding.reason);
+
+    if (flaggedPage) {
+      score = Math.max(score, flaggedPage.score);
+      // The link shares the page's host, so most of its own reasons repeat the
+      // page's. Say it once, as a statement about the page.
+      const summary = flaggedPage.reasons[0] || 'see the page address';
+      reasons = [
+        `This page itself looks ${flaggedPage.level}: ${summary[0].toLowerCase()}${summary.slice(1)}`,
+        ...reasons.filter((reason) => !flaggedPage.reasons.includes(reason)),
+      ];
+    } else if (multiplier !== 1 && total > 0) {
       reasons.push('Same site as this page (risk reduced)');
     }
     return { level: levelFor(score), score, reasons };
@@ -498,15 +511,32 @@
     }
   }
 
+  let lastPage = { url: null, verdict: null };
+
+  /**
+   * Scores the page's own address, as if it were a link arriving from
+   * elsewhere. Remembers the last page, since every link on it asks again.
+   *
+   * @param {string} pageUrl
+   * @returns {{ level: 'ok'|'suspicious'|'dangerous', score: number, reasons: string[] }}
+   */
+  function analyzePage(pageUrl) {
+    if (lastPage.url !== pageUrl) {
+      lastPage = { url: pageUrl, verdict: analyzeLink({ href: pageUrl }) };
+    }
+    return lastPage.verdict;
+  }
+
   /**
    * Scores one link from its strings alone.
    *
-   * @param {{ href: string, text?: string, pageUrl?: string }} link
+   * @param {{ href: string, text?: string, pageUrl?: string, pageVerdict?: object }} link
    *   href: the link target as written in the page; text: the visible link
-   *   text; pageUrl: the URL of the page the link is on.
+   *   text; pageUrl: the URL of the page the link is on; pageVerdict: the
+   *   result of analyzePage(pageUrl), if the caller already has it.
    * @returns {{ level: 'ok'|'suspicious'|'dangerous', score: number, reasons: string[] }}
    */
-  function analyzeLink({ href, text = '', pageUrl = '' } = {}) {
+  function analyzeLink({ href, text = '', pageUrl = '', pageVerdict = null } = {}) {
     const W = CONFIG.weights;
     const findings = [];
     const add = (points, reason) => findings.push({ points, reason });
@@ -643,14 +673,20 @@
       add(W.longUrl, `Very long URL (${url.href.length} characters)`);
     }
 
-    return finish(findings, sameSite ? CONFIG.sameSiteMultiplier : 1);
+    if (!sameSite) return finish(findings);
+
+    // Staying on the same site only lowers the risk if the site itself looks
+    // fine. On a lookalike page, "same site" means "more of the lookalike".
+    const verdictOfPage = pageVerdict || analyzePage(pageUrl);
+    if (verdictOfPage.level !== 'ok') return finish(findings, { flaggedPage: verdictOfPage });
+    return finish(findings, { multiplier: CONFIG.sameSiteMultiplier });
   }
 
   // ---------------------------------------------------------------------------
   // Exports: a global for the content script, module.exports for Node tests.
   // ---------------------------------------------------------------------------
 
-  const api = { analyzeLink, getRegistrableDomain, CONFIG };
+  const api = { analyzeLink, analyzePage, getRegistrableDomain, CONFIG };
 
   globalThis.Tripwire = globalThis.Tripwire || {};
   Object.assign(globalThis.Tripwire, api);

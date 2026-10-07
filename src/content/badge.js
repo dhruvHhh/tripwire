@@ -1,12 +1,12 @@
-// Tripwire badge: the small dot shown after a link.
+// Tripwire badge: the small dot drawn at a link's corner, and what its
+// tooltip says.
 //
-// Each badge has a closed shadow root, so nothing outside this file can reach
-// its internals. Callers get a handle with setVerdict() instead.
+// Badges live inside the overlay's closed shadow root (see overlay.js), never
+// in the page's own DOM. Callers get a handle with setVerdict() rather than
+// reaching into the element.
 
 (() => {
   'use strict';
-
-  const BADGE_TAG = 'tripwire-badge';
 
   const HEADLINES = {
     ok: 'No red flags found (not a guarantee)',
@@ -14,68 +14,49 @@
     dangerous: 'Likely dangerous link',
   };
 
-  let sharedSheet = null;
-
-  function getSharedSheet() {
-    if (!sharedSheet) {
-      sharedSheet = new CSSStyleSheet();
-      sharedSheet.replaceSync(Tripwire.styles.SHADOW_CSS);
-    }
-    return sharedSheet;
-  }
-
-  function applyShadowStyles(root) {
-    try {
-      root.adoptedStyleSheets = [getSharedSheet()];
-    } catch {
-      const style = document.createElement('style');
-      style.textContent = Tripwire.styles.SHADOW_CSS;
-      root.appendChild(style);
-    }
-  }
-
-  function formatTooltip(level, reasons) {
-    const headline = HEADLINES[level];
-    if (reasons.length === 0) return headline;
-
-    const lines = reasons.map((reason) => `• ${reason}`);
-    // An "ok" link can still carry low-weight observations; keep them clearly
-    // separate from the headline so they don't read as red flags.
-    if (level === 'ok') return [headline, '', 'Minor notes:', ...lines].join('\n');
-    return [headline, ...lines].join('\n');
-  }
-
   function createBadge() {
-    const host = document.createElement(BADGE_TAG);
-    host.style.cssText = Tripwire.styles.HOST_INLINE_STYLE;
-    host.setAttribute('aria-hidden', 'true');
+    const element = document.createElement('span');
+    element.className = 'tripwire-badge';
+    element.dataset.level = 'unknown';
+    element.hidden = true;
 
-    const root = host.attachShadow({ mode: 'closed' });
-    applyShadowStyles(root);
-
-    const dot = document.createElement('span');
-    dot.className = 'tripwire-badge';
-    dot.dataset.level = 'unknown';
-    root.appendChild(dot);
+    let verdict = { level: 'unknown', reasons: [] };
 
     function setVerdict(level, reasons = []) {
-      dot.dataset.level = level;
-      dot.title = formatTooltip(level, reasons);
-
-      // Colour alone is invisible to screen readers, so warnings are announced.
-      // "ok" badges stay hidden: announcing one after every link is just noise.
-      if (level === 'ok') {
-        host.setAttribute('aria-hidden', 'true');
-        host.removeAttribute('role');
-        host.removeAttribute('aria-label');
-      } else {
-        host.removeAttribute('aria-hidden');
-        host.setAttribute('role', 'img');
-        host.setAttribute('aria-label', `${HEADLINES[level]}: ${reasons.join('; ')}`);
-      }
+      verdict = { level, reasons };
+      element.dataset.level = level;
     }
 
-    return { element: host, setVerdict };
+    // Fills `container` with this badge's tooltip. Reasons quote hostnames and
+    // link text from the page, so everything goes in as text, never as HTML.
+    function renderTooltip(container) {
+      const { level, reasons } = verdict;
+      container.dataset.level = level;
+
+      const headline = document.createElement('strong');
+      headline.textContent = HEADLINES[level] || '';
+      container.replaceChildren(headline);
+      if (reasons.length === 0) return;
+
+      // An "ok" link can still carry low-weight observations; label them so
+      // they don't read as red flags.
+      if (level === 'ok') {
+        const label = document.createElement('span');
+        label.className = 'tripwire-notes-label';
+        label.textContent = 'Minor notes:';
+        container.appendChild(label);
+      }
+
+      const list = document.createElement('ul');
+      for (const reason of reasons) {
+        const item = document.createElement('li');
+        item.textContent = reason;
+        list.appendChild(item);
+      }
+      container.appendChild(list);
+    }
+
+    return { element, setVerdict, renderTooltip };
   }
 
   Tripwire.createBadge = createBadge;

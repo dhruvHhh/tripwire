@@ -5,25 +5,123 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tripwire demo page</title>
   <style>
-    body { font: 16px/1.6 system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #202124; }
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 860px; margin: 0 auto 6rem; padding: 0 1rem; color: #202124; }
     h1 { margin-bottom: 0.25rem; }
     h2 { margin-top: 2.25rem; padding-left: 0.6rem; border-left: 6px solid; }
     h2.ok { border-color: #1e8e3e; }
     h2.suspicious { border-color: #f9ab00; }
     h2.dangerous { border-color: #d93025; }
-    h2.none { border-color: #9aa0a6; }
+    h2.none, h2.layout { border-color: #9aa0a6; }
+    h3 { margin: 1.5rem 0 0.25rem; font-size: 1rem; }
     .notice { background: #fef7e0; border: 1px solid #f9ab00; border-radius: 6px; padding: 0.6rem 0.9rem; }
     li { margin: 0.35rem 0; }
     .why { color: #5f6368; font-size: 0.875rem; margin-left: 0.5rem; }
+    .expect { color: #5f6368; font-size: 0.875rem; margin: 0 0 0.5rem; }
+
+    /* Sticky header with a flex nav bar */
+    .site-header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #dadce0; }
+    .site-header nav { display: flex; align-items: center; gap: 1.25rem; padding: 0.6rem 0; }
+    .site-header nav a { text-decoration: none; }
+    .site-header .spacer { flex: 1; }
+    .site-header img { display: block; }
+
+    /* Search-result lookalike: title link and URL line */
+    .result a { display: block; width: fit-content; }
+    .result a:first-child { font-size: 1.2rem; }
+    .result a:last-child { color: #188038; font-size: 0.875rem; text-decoration: none; }
+
+    .scroll-box { height: 130px; overflow: auto; border: 1px solid #dadce0; border-radius: 6px; padding: 0.25rem 0.9rem; }
+    .narrow { width: 230px; border: 1px dashed #dadce0; padding: 0.5rem; }
+    .card { display: block; width: 260px; padding: 0.9rem 1rem; border: 1px solid #dadce0; border-radius: 14px; color: inherit; text-decoration: none; }
+    .pill { display: inline-block; padding: 0.4rem 1.1rem; border-radius: 999px; background: #1a73e8; color: #fff; text-decoration: none; }
+    .fixed-chip { position: fixed; right: 16px; bottom: 16px; padding: 0.4rem 0.8rem; border: 1px solid #dadce0; border-radius: 8px; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+    .zero { display: inline-block; width: 0; height: 0; overflow: hidden; }
   </style>
 </head>
 <body>
+  <header class="site-header">
+    <nav>
+      <a href="/" data-expect="ok"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' rx='7' fill='%231f2937'/%3E%3Ctext x='16' y='23' font-size='20' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='white'%3ET%3C/text%3E%3C/svg%3E" width="32" height="32" alt="Tripwire demo home"></a>
+      <a href="/docs" data-expect="ok">Docs</a>
+      <a href="https://docs.python.org/3/" data-expect="ok">Python</a>
+      <a href="http://free-prizes.tk/claim" data-expect="suspicious">Offers</a>
+      <span class="spacer"></span>
+      <a href="https://www.paypa1.example/signin" data-expect="dangerous">Sign in</a>
+    </nav>
+  </header>
+
   <h1>Tripwire demo page</h1>
-  <p>Each section says which badge colour its links should get. Hover a badge to read the reasons.</p>
-  <p class="notice">
-    Clicking is disabled on this page. The risky examples use reserved names (<code>.example</code>,
-    documentation IP ranges) that don't resolve, but nothing here is meant to be visited.
+  <p>
+    Each section says which badge its links should get. In the default "Risky only" mode you'll see
+    amber and red badges; choose "Show all" in the Tripwire popup to see the green ones too.
+    Hover a badge to read the reasons.
   </p>
+  <p class="notice">
+    Clicking is disabled on this page. Most of the risky examples use reserved names
+    (<code>.example</code>, documentation IP ranges) that don't resolve, but nothing here is meant to
+    be visited.
+  </p>
+
+  <h2 class="layout">Placement tests</h2>
+
+  <h3>Sticky header and flex nav bar</h3>
+  <p class="expect">
+    The header above stays put while you scroll. "Offers" (amber) and "Sign in" (red) keep their
+    badges on their corners the whole time, and the nav items don't shift. Links scrolling under
+    the header lose their badge while covered.
+  </p>
+
+  <h3>Search result: title and URL line</h3>
+  <p class="expect">Two links to the same address, one badge (on the title). Switch to "Show all" and it stays one.</p>
+  <div class="result">
+    <a href="https://www.paypal.com.secure-login.example/" data-expect="dangerous">PayPal: Log in to your account</a>
+    <a href="https://www.paypal.com.secure-login.example/" data-expect="dangerous">https://www.paypal.com.secure-login.example</a>
+  </div>
+
+  <h3>Scrollable box</h3>
+  <p class="expect">Badges follow their links as the box scrolls, and vanish when the link leaves the box.</p>
+  <div class="scroll-box">
+    <p><a href="https://example.com/one" data-expect="ok">An ordinary link</a></p>
+    <p><a href="http://203.0.113.9/login" data-expect="suspicious">Log in at a raw IP address</a></p>
+    <p><a href="https://example.com/two" data-expect="ok">Another ordinary link</a></p>
+    <p><a href="https://arnazon.example/deals" data-expect="dangerous">Today's deals</a></p>
+    <p><a href="https://example.com/three" data-expect="ok">A third ordinary link</a></p>
+    <p><a href="https://gooogle.example/" data-expect="suspicious">Search the web</a></p>
+    <p><a href="http://google.com@evil.example/" data-expect="dangerous">Google account</a></p>
+    <p><a href="https://example.com/four" data-expect="ok">The last ordinary link</a></p>
+  </div>
+
+  <h3>Image link</h3>
+  <p class="expect">Red badge on the picture's top-right corner.</p>
+  <p>
+    <a href="https://www.paypa1.example/" data-expect="dangerous"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='90'%3E%3Crect width='200' height='90' rx='8' fill='%23e8f0fe'/%3E%3Ctext x='100' y='52' font-size='18' font-family='sans-serif' text-anchor='middle' fill='%231a73e8'%3EBanner image%3C/text%3E%3C/svg%3E" width="200" height="90" alt="Banner"></a>
+  </p>
+
+  <h3>Link wrapped onto two lines</h3>
+  <p class="expect">Amber badge at the end of the link's first line, not floating at the box's corner.</p>
+  <p class="narrow">
+    Please read
+    <a href="http://203.0.113.9/terms" data-expect="suspicious">the full terms and conditions of this cashback offer</a>
+    before you continue.
+  </p>
+
+  <h3>Block card and pill button</h3>
+  <p class="expect">Red badge at the end of the card's title; amber badge at the end of the pill's text. Neither floats out at the box's corner.</p>
+  <a class="card" href="https://sbi.co.in.kyc-update.example/login"><strong>Update your KYC</strong> <br>Your account will be suspended in 24 hours.</a>
+  <p><a class="pill" href="https://www.phonepay.example/offers">Claim cashback</a></p>
+
+  <h3>Hidden links</h3>
+  <p class="expect">Four risky links are in this paragraph but none is visible, so no badge appears here. They still count in the popup.</p>
+  <p>
+    [<span style="display: none"><a href="http://203.0.113.9/a">display none</a></span>]
+    [<span style="visibility: hidden"><a href="http://203.0.113.9/b">hidden</a></span>]
+    [<span style="opacity: 0"><a href="http://203.0.113.9/c">clear</a></span>]
+    [<span class="zero"><a href="http://203.0.113.9/d">zero size</a></span>]
+  </p>
+
+  <div class="fixed-chip">
+    Fixed corner: <a href="https://bit.ly/3xYzAbC" data-expect="suspicious">paypal.com</a>
+  </div>
 
   <h2 class="ok">Green: no red flags found</h2>
   <ul>
@@ -84,6 +182,14 @@
     <li><a href="javascript:void(0)">Do nothing</a><span class="why">javascript:</span></li>
     <li><a href="">Empty href</a><span class="why">empty</span></li>
   </ul>
+
+  <h2 class="layout">Lookalike page test</h2>
+  <p>
+    Open this same page as <code>http://paypa1.localhost:8080/</code>. Chrome treats any
+    <code>.localhost</code> name as this computer, so the address works, and its hostname is a
+    lookalike of paypal. There, the same-site links (the logo, "Docs" and "About this page") turn
+    red, and the popup shows a warning about the page itself.
+  </p>
 
   <script>
     // Keep the examples from navigating anywhere.

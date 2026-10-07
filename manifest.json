@@ -1,12 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Tripwire",
-  "version": "0.2.0",
-  "description": "Shows a safety badge next to every link on a web page.",
+  "version": "0.3.0",
+  "description": "Flags risky links on web pages with a small badge, using checks that run on your device.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Tripwire",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "src/background/background.js"
@@ -16,8 +26,11 @@
       "matches": ["http://*/*", "https://*/*"],
       "js": [
         "src/lib/analyzer.js",
+        "src/lib/geometry.js",
+        "src/lib/settings.js",
         "src/content/styles.js",
         "src/content/badge.js",
+        "src/content/overlay.js",
         "src/content/content.js"
       ],
       "run_at": "document_idle"

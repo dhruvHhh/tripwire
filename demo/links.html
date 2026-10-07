@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tripwire demo page</title>
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #202124; }
+    h1 { margin-bottom: 0.25rem; }
+    h2 { margin-top: 2.25rem; padding-left: 0.6rem; border-left: 6px solid; }
+    h2.ok { border-color: #1e8e3e; }
+    h2.suspicious { border-color: #f9ab00; }
+    h2.dangerous { border-color: #d93025; }
+    h2.none { border-color: #9aa0a6; }
+    .notice { background: #fef7e0; border: 1px solid #f9ab00; border-radius: 6px; padding: 0.6rem 0.9rem; }
+    li { margin: 0.35rem 0; }
+    .why { color: #5f6368; font-size: 0.875rem; margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Tripwire demo page</h1>
+  <p>Each section says which badge colour its links should get. Hover a badge to read the reasons.</p>
+  <p class="notice">
+    Clicking is disabled on this page. The risky examples use reserved names (<code>.example</code>,
+    documentation IP ranges) that don't resolve, but nothing here is meant to be visited.
+  </p>
+
+  <h2 class="ok">Green: no red flags found</h2>
+  <ul>
+    <li><a href="https://en.wikipedia.org/wiki/Phishing" data-expect="ok">Read about phishing</a><span class="why">ordinary link</span></li>
+    <li><a href="/about" data-expect="ok">About this page</a><span class="why">relative, same site</span></li>
+    <li><a href="https://www.example.com/" data-expect="ok">example.com</a><span class="why">text and href differ only by www</span></li>
+    <li><a href="https://docs.python.org/3/" data-expect="ok">python.org</a><span class="why">subdomain of the domain in the text</span></li>
+    <li><a href="https://www.bbc.co.uk/news" data-expect="ok">bbc.co.uk/news</a><span class="why">multi-part suffix</span></li>
+    <li><a href="https://www.paypal.com/signin" data-expect="ok">Log in to PayPal</a><span class="why">the real brand domain</span></li>
+    <li><a href="https://www.amazon.in/gp/cart" data-expect="ok">amazon.in</a><span class="why">brand on a country domain</span></li>
+    <li><a href="https://www.irctc.co.in/nget/train-search" data-expect="ok">Book a train</a><span class="why">the real brand domain</span></li>
+    <li><a href="https://youtu.be/dQw4w9WgXcQ" data-expect="ok">youtube.com/watch?v=dQw4w9WgXcQ</a><span class="why">sister domain of the one in the text</span></li>
+    <li><a href="https://github.com/nodejs/node/blob/main/README.md" data-expect="ok">README.md</a><span class="why">file name, not a domain</span></li>
+    <li><a href="https://www.telegraph.co.uk/news/" data-expect="ok">The Telegraph</a><span class="why">real site near a brand name</span></li>
+    <li><a href="https://shop.example.com/products/blue-widget-deluxe-edition?utm_source=newsletter&amp;utm_medium=email&amp;utm_campaign=spring_sale_2026&amp;utm_content=hero_banner&amp;utm_term=blue+widget&amp;gclid=EAIaIQobChMI8fKq1eXQ_gIVzQutBh0x5QZWEAAYASAAEgJx7PD_BwE&amp;fbclid=IwAR2xJ9d8H3kLmN5pQrStUvWxYz0aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567&amp;mc_cid=a1b2c3d4e5&amp;mc_eid=f6g7h8i9j0&amp;ref=homepage_recommendations_carousel_slot_3" data-expect="ok">Blue Widget Deluxe</a><span class="why">long tracking URL; tooltip has a minor note</span></li>
+    <li><a href="https://bit.ly/3xYzAbC" data-expect="ok">Sign up for the webinar</a><span class="why">shortener; tooltip has a minor note</span></li>
+    <li><a href="http://old-forum.example.com/thread/42" data-expect="ok">the original thread</a><span class="why">plain http; tooltip has a minor note</span></li>
+    <li><a href="http://192.168.1.1/" data-expect="ok">open your router settings</a><span class="why">local address; tooltip has a minor note</span></li>
+    <li><a href="https://b&#xFC;cher.de/" data-expect="ok">B&#xFC;cher</a><span class="why">legitimate non-ASCII domain; tooltip has a minor note</span></li>
+  </ul>
+
+  <h2 class="suspicious">Amber: suspicious</h2>
+  <ul>
+    <li><a href="https://tracker.example.net/c/123" data-expect="suspicious">myblog.com</a><span class="why">text shows a different domain</span></li>
+    <li><a href="https://bit.ly/3xYzAbC" data-expect="suspicious">paypal.com</a><span class="why">domain text behind a shortener</span></li>
+    <li><a href="http://203.0.113.9/login" data-expect="suspicious">Log in</a><span class="why">raw IP over http</span></li>
+    <li><a href="https://gooogle.example/" data-expect="suspicious">Search</a><span class="why">one edit from google</span></li>
+    <li><a href="https://www.phonepay.example/offers" data-expect="suspicious">Cashback offers</a><span class="why">two edits from phonepe</span></li>
+    <li><a href="https://admin:hunter2@intranet.example.com/" data-expect="suspicious">Intranet</a><span class="why">credentials in the URL</span></li>
+    <li><a href="data:image/png;base64,iVBORw0KGgo=" data-expect="suspicious">Download chart</a><span class="why">data: URI</span></li>
+    <li><a href="http://free-prizes.tk/claim" data-expect="suspicious">Claim your prize</a><span class="why">http plus a high-abuse TLD</span></li>
+    <li><a href="https://secure.login.account.verify.example.xyz/" data-expect="suspicious">Verify your account</a><span class="why">many subdomains plus a high-abuse TLD</span></li>
+  </ul>
+
+  <h2 class="dangerous">Red: likely dangerous</h2>
+  <ul>
+    <li><a href="https://evil.example/signin" data-expect="dangerous">paypal.com</a><span class="why">text names a brand, href goes elsewhere</span></li>
+    <li><a href="http://203.0.113.50/irctc/" data-expect="dangerous">https://www.irctc.co.in/nget/train-search</a><span class="why">URL as text, raw IP as destination</span></li>
+    <li><a href="http://3232235777/" data-expect="dangerous">Continue (decimal IP)</a><span class="why">disguised IP address</span></li>
+    <li><a href="http://0xC0A80101/" data-expect="dangerous">Continue (hex IP)</a><span class="why">disguised IP address</span></li>
+    <li><a href="http://0300.0250.0001.0001/" data-expect="dangerous">Continue (octal IP)</a><span class="why">disguised IP address</span></li>
+    <li><a href="https://p&#x430;ypal.com/" data-expect="dangerous">PayPal</a><span class="why">Cyrillic "a" in paypal (mixed scripts)</span></li>
+    <li><a href="https://xn--80ak6aa92e.com/" data-expect="dangerous">Apple</a><span class="why">all-Cyrillic "apple"</span></li>
+    <li><a href="http://google.com@evil.example/" data-expect="dangerous">Google</a><span class="why">credentials disguised as a host</span></li>
+    <li><a href="https://www.paypa1.example/" data-expect="dangerous">Log in</a><span class="why">digit substitution</span></li>
+    <li><a href="https://arnazon.example/deals" data-expect="dangerous">Deals</a><span class="why">"rn" standing in for "m"</span></li>
+    <li><a href="https://www.paypal.com.secure-login.example/" data-expect="dangerous">Log in</a><span class="why">brand as a subdomain</span></li>
+    <li><a href="https://sbi.co.in.kyc-update.example/login" data-expect="dangerous">Update KYC</a><span class="why">brand as a subdomain</span></li>
+    <li><a href="data:text/html;base64,PGgxPkxvZ2luPC9oMT4=" data-expect="dangerous">Open document</a><span class="why">data: URI that renders as a page</span></li>
+    <li><a href="http://hdfcbamk.tk/netbanking" data-expect="dangerous">NetBanking</a><span class="why">typo of hdfcbank, http, high-abuse TLD</span></li>
+  </ul>
+
+  <h2 class="none">No badge at all</h2>
+  <ul>
+    <li><a href="#top">Back to top</a><span class="why">in-page anchor</span></li>
+    <li><a href="mailto:someone@example.com">Email us</a><span class="why">mailto:</span></li>
+    <li><a href="tel:+911234567890">Call us</a><span class="why">tel:</span></li>
+    <li><a href="javascript:void(0)">Do nothing</a><span class="why">javascript:</span></li>
+    <li><a href="">Empty href</a><span class="why">empty</span></li>
+  </ul>
+
+  <script>
+    // Keep the examples from navigating anywhere.
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('a')) event.preventDefault();
+    });
+  </script>
+</body>
+</html>

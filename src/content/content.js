@@ -76,9 +76,21 @@
           `(${stats.analyserRuns} analyzer runs) in ${stats.analyseMs}ms; ` +
           `${stats.overlay.passes} positioning passes in ${stats.overlay.positionMs}ms; ` +
           `${stats.mutationBatches} mutation batches; ${stats.workSlices} work slices, ` +
-          `longest ${stats.longestSliceMs}ms; ${stats.overlay.drawn} badges drawn`,
+          `longest ${stats.longestSliceMs}ms; ${stats.overlay.drawn} badges drawn; ` +
+          `${stats.addressesLookedUp} addresses checked against the blocklists in ` +
+          `${stats.lookupBatches} batches, ${stats.listed} listed`,
       );
     }, DEBUG_LOG_INTERVAL_MS);
+  }
+
+  // Asks the service worker which of these addresses are on a blocklist.
+  // The message goes to this extension's own worker and no further.
+  function lookupListings(urls) {
+    try {
+      return chrome.runtime.sendMessage({ type: MESSAGES.LOOKUP, urls }).catch(() => null);
+    } catch {
+      return Promise.resolve(null); // The extension was reloaded or removed.
+    }
   }
 
   // Called by the scanner whenever its results changed.
@@ -98,7 +110,7 @@
       if (scanner) scanner.stop();
       scanner = null;
     } else {
-      if (!scanner) scanner = createScanner({ onChange: onScanChange });
+      if (!scanner) scanner = createScanner({ onChange: onScanChange, lookup: lookupListings });
       scanner.setDisplayFilter((level) => settings.shouldDisplay(level, mode, revealed));
     }
 
@@ -159,6 +171,18 @@
     if (port.name !== settings.POPUP_PORT) return;
     popupPorts.add(port);
     port.onDisconnect.addListener(() => popupPorts.delete(port));
+  });
+
+  // The blocklists changed (first download, an update, "Check now"): check
+  // this page's links against the new ones.
+  let listVersion = null;
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !(settings.LIST_STATUS_KEY in changes)) return;
+    const status = changes[settings.LIST_STATUS_KEY].newValue;
+    const version = status ? status.version : null;
+    if (version === listVersion) return;
+    listVersion = version;
+    if (scanner) scanner.recheckListings();
   });
 
   // Settings changed in another tab or window: apply them here without a reload.

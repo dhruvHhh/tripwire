@@ -1,10 +1,12 @@
 // Tripwire service worker.
 //
-// Keeps the toolbar icon's count in step with what each tab's content script
-// found. Content scripts can't call chrome.action themselves, so they send
-// their counts here. Later steps will add reputation lookups.
+// Two jobs:
+//   - keep the toolbar icon's count in step with what each tab's content
+//     script found (content scripts can't call chrome.action themselves);
+//   - keep the blocklists downloaded and answer lookups against them
+//     (lists.js).
 
-importScripts('../lib/settings.js');
+importScripts('../lib/analyzer.js', '../lib/settings.js', '../lib/blocklist.js', 'lists.js');
 
 const { MESSAGES, toolbarBadge } = Tripwire.settings;
 

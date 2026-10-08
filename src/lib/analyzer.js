@@ -32,6 +32,7 @@
       textMismatch: 55, // text shows a domain, href goes elsewhere
       textMismatchBrand: 25, // ...and the text names a listed brand
       textMismatchViaShortener: 25, // replaces textMismatch when the href is a shortener
+      clickTracker: 5, // replaces textMismatch when the href is a click-tracking service
 
       // 2. IP-address hosts
       ipHost: 50,
@@ -95,6 +96,27 @@
       'lnkd.in', 'fb.me', 'dlvr.it', 'trib.al', 'v.gd',
     ],
 
+    // Click-tracking and link-rewriting services used by email and marketing
+    // platforms and by mail security gateways. Every link in a newsletter goes
+    // through one, so text that shows a different domain is normal there and
+    // is not penalised. A link matches if its host is one of these or a
+    // subdomain of one.
+    clickTrackers: [
+      // Email and marketing platforms
+      'list-manage.com', 'mandrillapp.com', 'sendgrid.net', 'mailgun.org',
+      'sparkpostmail.com', 'rs6.net', 'klclick.com', 'klclick1.com',
+      'klclick2.com', 'klclick3.com', 'mjt.lu', 'awstrack.me', 'pstmrk.it',
+      'customeriomail.com', 'intercom-clicks.com', 'hubspotlinks.com',
+      'hubspotemail.net', 'mlsend.com', 'convertkit-mail.com',
+      'convertkit-mail2.com', 'beehiiv.com', 'substack.com', 'exct.net',
+      'sendibt2.com', 'sendibt3.com', 'lnks.gd', 'aweber.com',
+      'activehosted.com', 'mailtrack.io', 'app.link', 'onelink.me',
+      // Mail security gateways that rewrite links
+      'safelinks.protection.outlook.com', 'urldefense.com',
+      'urldefense.proofpoint.com', 'mimecast.com', 'mimecastprotect.com',
+      'cudasvc.com',
+    ],
+
     // Domains run by the same organisation. A text/href pair inside one group
     // is not a mismatch, and a shortener is first-party on its own platform
     // (t.co on x.com, lnkd.in on linkedin.com).
@@ -115,10 +137,9 @@
       'rest', 'buzz', 'cyou', 'sbs', 'zip', 'mov', 'monster', 'quest', 'work',
     ],
 
-    // TODO: replace with the full Public Suffix List (https://publicsuffix.org)
-    // once there is a build step. This hand-picked subset covers the common
-    // multi-part country suffixes plus shared-hosting suffixes where every
-    // subdomain belongs to a different owner.
+    // TODO: replace both suffix lists with the full Public Suffix List
+    // (https://publicsuffix.org) once there is a build step. This hand-picked
+    // subset covers the common multi-part country suffixes.
     multiPartSuffixes: [
       // United Kingdom
       'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'ltd.uk', 'plc.uk',
@@ -138,11 +159,18 @@
       'com.ar', 'com.tr', 'com.sa', 'com.pk', 'com.bd', 'com.np', 'com.lk',
       'co.kr', 'or.kr', 'co.id', 'co.th', 'co.il', 'co.ke', 'com.ng',
       'com.eg', 'com.ua', 'com.ph', 'com.vn', 'com.co',
-      // Shared hosting
-      'github.io', 'gitlab.io', 'pages.dev', 'workers.dev', 'vercel.app',
-      'netlify.app', 'web.app', 'firebaseapp.com', 'herokuapp.com',
-      'blogspot.com', 'appspot.com', 'azurewebsites.net', 'cloudfront.net',
-      'onrender.com', 'glitch.me', 'weebly.com', 'wixsite.com',
+    ],
+
+    // Shared hosting: every subdomain belongs to a different owner, so each
+    // one counts as its own registrable domain, and the domain as a whole can
+    // never be judged by what one of its users does.
+    sharedHostingSuffixes: [
+      'github.io', 'gitlab.io', 'pages.dev', 'workers.dev', 'r2.dev',
+      'vercel.app', 'netlify.app', 'web.app', 'firebaseapp.com',
+      'herokuapp.com', 'blogspot.com', 'appspot.com', 'azurewebsites.net',
+      'cloudfront.net', 'onrender.com', 'glitch.me', 'weebly.com',
+      'wixsite.com', 'wordpress.com', 'webflow.io', 'framer.app',
+      'myshopify.com', 'godaddysites.com', 'surge.sh', 'replit.app',
       '000webhostapp.com', 'duckdns.org', 'ngrok.io', 'ngrok-free.app',
     ],
 
@@ -191,7 +219,7 @@
     return String(host || '').toLowerCase().replace(/\.$/, '');
   }
 
-  const suffixSet = new Set(CONFIG.multiPartSuffixes);
+  const suffixSet = new Set([...CONFIG.multiPartSuffixes, ...CONFIG.sharedHostingSuffixes]);
 
   // Splits a hostname into the registrable domain (the part someone actually
   // registered), its first label, and any subdomain labels below it.
@@ -395,6 +423,7 @@
     ...CONFIG.relatedDomains.flat(),
   ]);
   const shortenerSet = new Set(CONFIG.shorteners);
+  const clickTrackerSet = new Set(CONFIG.clickTrackers);
   const riskyTldSet = new Set(CONFIG.riskyTlds);
   const textTldSet = new Set(CONFIG.textTlds);
 
@@ -429,6 +458,16 @@
       if (distance > 0 && distance <= maxEdits) {
         return { brand: brand.domain, kind: 'edit' };
       }
+    }
+    return null;
+  }
+
+  // Returns the click-tracking service a host belongs to, or null.
+  function findClickTracker(host) {
+    const labels = host.split('.');
+    for (let start = 0; start < labels.length - 1; start++) {
+      const candidate = labels.slice(start).join('.');
+      if (clickTrackerSet.has(candidate)) return candidate;
     }
     return null;
   }
@@ -572,6 +611,7 @@
     // A shortener on its own platform (t.co on x.com) is first-party plumbing.
     const isShortener = shortenerSet.has(parts.domain) || shortenerSet.has(host);
     const firstPartyShortener = isShortener && areRelated(parts.domain, pageDomain);
+    const clickTracker = ipHost ? null : findClickTracker(host);
 
     // 4. Credentials in the URL
     if (url.username || url.password) {
@@ -633,9 +673,12 @@
         }
       }
 
-      // 5. URL shorteners
+      // 5. URL shorteners and click trackers
       if (isShortener && !firstPartyShortener) {
         add(W.shortener, `URL shortener (${parts.domain}) hides the real destination`);
+      }
+      if (clickTracker) {
+        add(W.clickTracker, `Goes through a click-tracking service (${clickTracker})`);
       }
 
       // 7. Subdomain depth and TLD
@@ -653,9 +696,13 @@
     // 1. Text / href mismatch
     const textHost = hostFromText(text);
     if (textHost && !firstPartyShortener) {
-      const textDomain = getRegistrableDomain(textHost);
+      const textParts = splitHost(textHost);
+      const textDomain = textParts.domain;
       if (!areRelated(textDomain, parts.domain)) {
-        if (isShortener) {
+        if (clickTracker) {
+          // Normal for newsletters and marketing email: no penalty. The
+          // click-tracker note above already says the destination is hidden.
+        } else if (isShortener) {
           add(
             W.textMismatchViaShortener,
             `Link text shows ${textDomain} but the link goes through a shortener`,
@@ -664,6 +711,21 @@
           add(W.textMismatch, `Link text shows ${textDomain} but it goes to ${parts.domain}`);
           if (brandDomains.has(textDomain)) {
             add(W.textMismatchBrand, `The text names a commonly impersonated site (${textDomain})`);
+          }
+        }
+
+        // Whatever the link goes through, visible text that imitates a brand
+        // is a red flag of its own.
+        if (!notLookalikes.has(textDomain)) {
+          const lookalike = findLookalike(textParts.label);
+          if (lookalike && lookalike.kind === 'confusable') {
+            add(W.lookalikeConfusable, `Link text imitates ${lookalike.brand} with look-alike characters`);
+          } else if (lookalike) {
+            add(W.lookalikeEditDistance, `Link text closely resembles ${lookalike.brand}`);
+          }
+          const buried = findBrandInSubdomain(textParts.subdomains);
+          if (buried) {
+            add(W.brandInSubdomain, `Link text uses "${buried}" as a subdomain of ${textDomain}`);
           }
         }
       }

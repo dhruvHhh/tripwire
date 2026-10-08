@@ -189,6 +189,63 @@
   <tripwire-demo-late></tripwire-demo-late>
   <div id="closed-shadow-host"></div>
 
+  <h2 class="layout">Blocklist tests</h2>
+  <p class="expect">
+    These use Tripwire's bundled test list (<code>test/fixtures/blocklist.txt</code>), which is
+    loaded only when the extension is installed unpacked, as you have it. The results don't
+    depend on what the real lists contain today. The popup's "Blocklists" section shows the test
+    list as a third source. A listed link is always red, and its tooltip starts with "Listed as
+    phishing by Tripwire test list".
+  </p>
+
+  <h3>Whole hosts</h3>
+  <ul>
+    <li><a href="https://blocklisted-phish.example/login" data-expect="ok" data-listed="yes">Sign in to your account</a><span class="why">red: the host is listed</span></li>
+    <li><a href="https://login.blocklisted-phish.example/" data-expect="ok" data-listed="yes">Customer login</a><span class="why">red: a subdomain of a listed host</span></li>
+    <li><a href="http://203.0.113.77/update.exe" data-expect="suspicious" data-listed="yes">Install the update</a><span class="why">red: listed, with the raw-IP and no-HTTPS reasons underneath</span></li>
+  </ul>
+
+  <h3>One address on a shared host</h3>
+  <ul>
+    <li><a href="https://shared-files.example/users/mallory/invoice.html" data-expect="ok" data-listed="yes">Invoice from Mallory</a><span class="why">red: this user's folder is listed</span></li>
+    <li><a href="https://shared-files.example/users/alice/notes.html" data-expect="ok" data-listed="no">Notes from Alice</a><span class="why">green: same host, a different user</span></li>
+    <li><a href="https://downloads.example/get.php?id=42&amp;utm_source=mail" data-expect="ok" data-listed="yes">Download your statement</a><span class="why">red: listed by its query, with tracking added</span></li>
+    <li><a href="https://bit.ly/tripwire-test-phish" data-expect="ok" data-listed="yes">A listed short link</a><span class="why">red: this short link is listed</span></li>
+    <li><a href="https://bit.ly/3xYzAbC" data-expect="ok" data-listed="no">Another short link</a><span class="why">green: the list also names bit.ly as a whole, which is ignored</span></li>
+  </ul>
+
+  <h3>Protected domains</h3>
+  <p class="expect">The test list names <code>github.com</code>, <code>github.io</code>, <code>sites.google.com</code> and others as whole hosts. Those entries are ignored; only the specific page counts.</p>
+  <ul>
+    <li><a href="https://sites.google.com/view/tripwire-test-phish/home" data-expect="ok" data-listed="yes">A fake bank on Google Sites</a><span class="why">red: this one page is listed</span></li>
+    <li><a href="https://sites.google.com/view/some-school-club" data-expect="ok" data-listed="no">A school club on Google Sites</a><span class="why">green</span></li>
+    <li><a href="https://github.com/nodejs/node" data-expect="ok" data-listed="no">Node.js on GitHub</a><span class="why">green</span></li>
+    <li><a href="https://someone.github.io/" data-expect="ok" data-listed="no">Someone's GitHub Pages site</a><span class="why">green</span></li>
+  </ul>
+
+  <h2 class="layout">Click-tracking links</h2>
+  <p class="expect">
+    Newsletters send every link through a tracking service, so text that shows one domain while
+    the link goes to the tracker is normal there. It gets a minor note, not a penalty. Text that
+    imitates a brand is still flagged.
+  </p>
+  <ul>
+    <li><a href="https://example.us7.list-manage.com/track/click?u=abc&amp;id=1" data-expect="ok">myshop.com</a><span class="why">green, with a click-tracking note</span></li>
+    <li><a href="https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.org" data-expect="ok">example.org</a><span class="why">green, with a click-tracking note</span></li>
+    <li><a href="https://example.us7.list-manage.com/track/click?u=abc&amp;id=2" data-expect="dangerous">paypa1.com</a><span class="why">red: the text itself imitates paypal.com</span></li>
+  </ul>
+
+  <h3>Text changed after the scan</h3>
+  <p class="expect">
+    Starts green. The button edits the link's text in place to "paypal.com" while it still goes to
+    example.net. The link turns red within a moment, and the toolbar count goes up by one. Press
+    again and it is green again.
+  </p>
+  <p>
+    <a id="retext-link" href="https://www.example.net/account">Account settings</a>
+    <button type="button" id="retext">Change its text</button>
+  </p>
+
   <h2 class="ok">Green: no red flags found</h2>
   <ul>
     <li><a href="https://en.wikipedia.org/wiki/Phishing" data-expect="ok">Read about phishing</a><span class="why">ordinary link</span></li>
@@ -377,6 +434,13 @@
 
     const closedBox = fillBox(byId('closed-shadow-host').attachShadow({ mode: 'closed' }), 'Box 3 (closed):');
     closedBox.append(makeLink('https://www.paypa1.example/closed/signin', 'Lookalike sign-in, never badged'));
+
+    // --- Text changed after the scan ----------------------------------------
+    // Edits the existing text node, which adds and removes nothing.
+    byId('retext').addEventListener('click', () => {
+      const textNode = byId('retext-link').firstChild;
+      textNode.data = textNode.data === 'paypal.com' ? 'Account settings' : 'paypal.com';
+    });
   </script>
 </body>
 </html>

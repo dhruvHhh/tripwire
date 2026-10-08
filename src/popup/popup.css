@@ -203,7 +203,7 @@ button:disabled {
 /* Flagged links */
 #flagged-list {
   /* Chrome caps a popup at 600px tall; keep the whole popup under that. */
-  max-height: 140px;
+  max-height: 120px;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -257,4 +257,97 @@ button:disabled {
   font-size: 12px;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Blocklist status */
+html {
+  /* If the popup grows past Chrome's height limit it scrolls; without this
+     the scrollbar would also force a sideways one. */
+  overflow-x: hidden;
+}
+
+.lists {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.lists summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.lists-label {
+  font-weight: 600;
+}
+
+.lists-summary {
+  color: var(--muted);
+}
+
+.lists-summary.warn,
+.lists-summary.error {
+  color: var(--suspicious);
+  font-weight: 600;
+}
+
+#lists-sources {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+#lists-sources li {
+  padding: 7px 9px;
+  border-left: 3px solid var(--ok);
+  border-radius: 4px;
+  background: var(--raised);
+}
+
+#lists-sources li + li {
+  margin-top: 6px;
+}
+
+#lists-sources li.warn {
+  border-left-color: var(--suspicious-fill);
+}
+
+#lists-sources li.error {
+  border-left-color: var(--dangerous);
+}
+
+#lists-sources li.pending {
+  border-left-color: var(--border);
+}
+
+.list-name,
+.list-state,
+.list-detail,
+.list-credit {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.list-name {
+  font-weight: 600;
+}
+
+.warn > .list-state,
+.error > .list-state {
+  color: var(--suspicious);
+  font-weight: 600;
+}
+
+.list-detail {
+  font-size: 12px;
+}
+
+.list-credit {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lists a {
+  color: var(--accent);
 }

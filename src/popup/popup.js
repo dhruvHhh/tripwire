@@ -169,6 +169,96 @@
     render();
   });
 
+  // --- Blocklist status -------------------------------------------------------
+  // Read straight from storage, where the service worker keeps it, so this
+  // part works on any tab, including ones Tripwire can't run on.
+
+  const { blocklist } = Tripwire;
+  let listStatus = null;
+  let checkingLists = false;
+  let listsShownOnce = false;
+
+  function link(text, href) {
+    const anchor = document.createElement('a');
+    anchor.textContent = text;
+    anchor.href = href;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    return anchor;
+  }
+
+  function span(className, text) {
+    const element = document.createElement('span');
+    element.className = className;
+    element.textContent = text;
+    return element;
+  }
+
+  function listItem(source, sourceState, now) {
+    const { tone, text, detail } = blocklist.describeSource(sourceState, now);
+    const item = document.createElement('li');
+    item.className = tone;
+
+    const title = document.createElement('span');
+    title.className = 'list-name';
+    title.append(source.homepage ? link(source.name, source.homepage) : source.name, ` (${source.category})`);
+
+    // Credit: where the list comes from and the licence it is published under.
+    const credit = document.createElement('span');
+    credit.className = 'list-credit';
+    credit.append(`Built from ${source.builtFrom}`);
+    if (source.licence) credit.append('. Licence: ', link(source.licence, source.licenceUrl));
+
+    item.append(title, span('list-state', text));
+    if (detail) item.append(span('list-detail', detail));
+    item.append(credit);
+    return item;
+  }
+
+  function renderLists() {
+    const now = Date.now();
+    const states = (listStatus && listStatus.sources) || {};
+    const { sources, fixture } = blocklist.CONFIG;
+
+    const overall = blocklist.describeAll(sources.map((source) => states[source.id]), now);
+    $('lists-summary').textContent = overall.text;
+    $('lists-summary').className = `lists-summary ${overall.tone}`;
+    // Open by itself when something needs attention, but never close it on the user.
+    if (!listsShownOnce && overall.tone !== 'ok') $('lists').open = true;
+    listsShownOnce = true;
+
+    const shown = states[fixture.id] ? [...sources, fixture] : sources;
+    $('lists-sources').replaceChildren(...shown.map((source) => listItem(source, states[source.id], now)));
+
+    $('check-now').disabled = checkingLists;
+    $('check-now').textContent = checkingLists ? 'Checking\u2026' : 'Check now';
+  }
+
+  $('check-now').addEventListener('click', async () => {
+    checkingLists = true;
+    renderLists();
+    let reply = null;
+    try {
+      reply = await chrome.runtime.sendMessage({ type: MESSAGES.UPDATE_LISTS });
+    } catch {
+      // The service worker couldn't be reached; the stored status still shows.
+    }
+    checkingLists = false;
+    if (reply && reply.status) listStatus = reply.status;
+    renderLists();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !(settings.LIST_STATUS_KEY in changes)) return;
+    listStatus = changes[settings.LIST_STATUS_KEY].newValue || null;
+    renderLists();
+  });
+
+  chrome.storage.local.get(settings.LIST_STATUS_KEY).then((stored) => {
+    listStatus = stored[settings.LIST_STATUS_KEY] || null;
+    renderLists();
+  });
+
   // The active tab's id is available without the "tabs" permission; its URL
   // isn't, which is why the hostname comes from the content script.
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

@@ -2,7 +2,7 @@
 
 Tripwire is a Chrome extension that scans every link on a web page and marks the risky ones with a small badge, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
 
-> **Status:** version 0.4.0. Links are scored by offline checks on the link itself, including links a page adds after it loads, and by default only amber and red links are marked. Tripwire makes no network requests yet.
+> **Status:** version 0.5.0. Links are scored by checks on the link itself and against two downloaded blocklists of known phishing and malware addresses. By default only amber and red links are marked. The links you browse never leave your browser; see [Privacy](#privacy).
 
 ## Roadmap
 
@@ -10,8 +10,8 @@ Tripwire is a Chrome extension that scans every link on a web page and marks the
 2. ✅ **Local heuristics:** score links on-device (lookalike domains, IP hosts, punycode, suspicious TLDs, etc.) and color the badges.
    - ✅ Follow-up: lookalike-page detection, display modes, toolbar count and popup, and badges drawn in an overlay instead of inside the page.
 3. ✅ **Dynamic pages and performance:** scan links added or changed after load, follow single-page navigation, scan open shadow roots, and do all of it in idle time.
-4. **Reputation lookups:** check link destinations against external reputation sources via the service worker, with caching.
-5. **UI:** an options page, richer link details, and managing the per-site list.
+4. ✅ **Local blocklists:** download public phishing and malware lists and check links against them inside the browser. No link is sent to any server.
+5. **UI:** an options page, richer link details, and managing the per-site list. An optional, opt-in online lookup could come later.
 6. **Publish:** polish, privacy policy, and release on the Chrome Web Store.
 
 ## What the badges mean
@@ -26,19 +26,77 @@ Hover a badge to see the reasons. Each check adds weighted points, and the total
 
 The checks:
 
-- **Text/href mismatch:** the link text is a domain (`paypal.com`) but the link goes to a different registrable domain.
+- **Text/href mismatch:** the link text is a domain (`paypal.com`) but the link goes to a different registrable domain. Text that imitates a brand (`paypa1.com`) is flagged as well.
 - **IP-address hosts,** including disguised decimal, hex and octal forms.
 - **Homographs:** punycode / non-ASCII hostnames and names that mix scripts.
 - **Credentials in the URL,** such as `http://google.com@evil.com`.
 - **URL shorteners** (mild; ignored on the shortener's own platform, like `t.co` on x.com).
+- **Click-tracking services** (a note only). Newsletters and mail security gateways send every link through one, so text that shows a different domain is normal there and is not penalised. Text that imitates a brand still is.
 - **Brand lookalikes:** look-alike characters (`paypa1`), near-miss spellings, and `brand.com.evil.com` subdomains.
 - **Other signals:** no HTTPS, `data:` URIs, many subdomains, very long URLs, high-abuse TLDs.
 
 **Same-site links and the page's own verdict.** The page's own address is scored once per page load. If it looks fine, a link that stays on the same site has its score cut to a quarter. If the page itself is suspicious or dangerous (for example you are on `paypa1.com`), there is no reduction: its same-site links inherit at least the page's level, with the reason "This page itself looks dangerous: ...".
 
-All weights, thresholds and lists (brands, shorteners, TLDs, domain suffixes) are in the `CONFIG` object at the top of [src/lib/analyzer.js](src/lib/analyzer.js).
+All weights, thresholds and lists (brands, shorteners, click trackers, TLDs, domain suffixes) are in the `CONFIG` object at the top of [src/lib/analyzer.js](src/lib/analyzer.js).
 
-Known limits: registrable domains come from a small bundled suffix list, not the full Public Suffix List, and near-miss matching will sometimes flag a real site whose name is one or two letters from a brand (amber, never red on its own).
+## Blocklists
+
+Tripwire also checks every link against two public lists of known bad addresses. A link on a list is always red, with a reason such as "Listed as phishing by Phishing URL Blocklist (list updated 3 hours ago)" above whatever the checks on the link itself found.
+
+| List | Covers | Built from | Licence |
+| --- | --- | --- | --- |
+| [Phishing URL Blocklist](https://gitlab.com/malware-filter/phishing-filter) | Phishing | OpenPhish, IPThreat and PhishTank | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| [Online Malicious URL Blocklist](https://gitlab.com/malware-filter/urlhaus-filter) | Malware downloads | URLhaus (abuse.ch) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+
+Both are published by the [malware-filter](https://gitlab.com/malware-filter) project. Tripwire does not include or redistribute them: each browser downloads them from the project's own servers. Tripwire is not endorsed by the project or by the sources its lists are built from.
+
+**Updates.** The lists are downloaded when Tripwire is installed and checked every 6 hours (they are published about twice a day). The download is tried from three of the project's mirrors in order, on GitLab Pages, GitHub Pages and Cloudflare Pages. A download is rejected, and the list already installed kept, if it is empty, far smaller than expected, mostly unreadable, much smaller than the installed list, or older than it. After a failure Tripwire tries again in 15 minutes, then 30, 60 and so on. If every mirror fails, the last good list stays in use.
+
+**Status.** The popup's "Blocklists" section shows each list's size and age, and any error from the last check. A list more than 48 hours old is marked "out of date"; it is still used. "Check now" fetches the lists straight away.
+
+**How a link is matched.** The link and the list entries are reduced to the same form first:
+
+- only `http` and `https` links are looked up, and the two are treated alike;
+- the host is lower-cased, and a trailing dot and a leading `www.` are dropped;
+- default ports are dropped; any other port is kept;
+- user names, passwords and `#fragments` are dropped;
+- the path is kept as the browser parses it, and the query string is kept.
+
+A list entry is either a whole host or one address on a host. A whole-host entry matches that host and its subdomains. An address entry matches that address and anything beneath it; a link is tried with and without a trailing slash, at each parent folder, and with its query cut at each `&`.
+
+**Shared hosting and big sites.** One bad page must not turn every link to a whole site red.
+
+- A whole-host entry only ever matches upward from the link: an entry for `scammer.github.io` matches that site and nothing else on `github.io`.
+- Whole-host entries for shared-hosting domains (`github.io`, `web.app`, `weebly.com`...), URL shorteners (`bit.ly`...), click trackers and public suffixes are ignored.
+- Whole-host entries for a short list of protected domains, and any subdomain of them, are ignored. Only entries for a specific address on them count, such as one Google Sites page. The list includes Google, Microsoft, Apple, Amazon, GitHub, Wikipedia, the big social networks, and Indian government and bank domains (`gov.in`, `nic.in`, `sbi.co.in`...). It is `protectedDomains` at the top of [src/lib/blocklist.js](src/lib/blocklist.js).
+
+With `debug: true` (see [Performance](#performance)), ignored entries are logged in the service worker's console.
+
+## Privacy
+
+**The links on the pages you visit never leave your browser.** Tripwire has no server, and there is no online lookup.
+
+What Tripwire downloads:
+
+- the two blocklists above, as plain text files, from `malware-filter.gitlab.io`, or from `curbengh.github.io` or `malware-filter.pages.dev` if the first can't be reached. That is every network request Tripwire makes.
+
+What those servers can see: that your IP address fetched a public list file, as with any download. The requests carry no cookies and no information about you, the pages you visit or the links on them.
+
+What stays on your device:
+
+- the lists themselves, in the browser's IndexedDB storage;
+- every check. A page's links go from the page to Tripwire's own background worker, which looks them up in memory and answers. Nothing is logged or stored;
+- your settings. The display mode and per-site choices are kept in `chrome.storage.sync`, which Chrome itself syncs between your devices if you have Chrome sync turned on.
+
+## Limitations
+
+- **The lists lag behind.** They are published about twice a day, and a phishing page is often used within hours of going up. A very new link may not be on them yet. The checks on the link itself (lookalike names, mismatched text, odd addresses) are the first line of defence for those.
+- **Green is not "safe".** It means none of the checks found anything and the address is on neither list.
+- **The lists can be wrong.** They are built by third parties from public reports. A site can be listed by mistake, or stay listed after it has been cleaned up.
+- **Only the link is judged.** Tripwire does not follow redirects or look at the page a link leads to, so a shortener or click tracker hides the real destination from it. A link through a click-tracking service is not penalised for showing a different domain as its text, so a phishing email sent through one can look clean unless its text imitates a brand or its address is listed.
+- **Suffix list.** Registrable domains come from a small bundled suffix list, not the full Public Suffix List.
+- **Near misses.** Near-miss matching will sometimes flag a real site whose name is one or two letters from a brand (amber, never red on its own).
+- **Places Tripwire doesn't look.** Closed shadow roots, frames inside a page, and editable areas are not scanned.
 
 ## Display modes
 
@@ -68,7 +126,8 @@ The popup shows:
 - the current site, and a warning if the page's own address looks suspicious or dangerous;
 - how many links are being tracked, and how many distinct red and amber destinations there are. These update while the popup is open;
 - the mode for this site, the one-off "Show badges on this page" button, and the global default;
-- up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link.
+- up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link;
+- the blocklists: each list's size, age and licence, any problem with the last update, and a "Check now" button.
 
 ## How badges are drawn
 
@@ -85,7 +144,7 @@ The only thing Tripwire writes into the page itself is a `data-tripwire-processe
 
 Tripwire keeps scanning after the page has loaded.
 
-- **New and changed links.** Links added later (search panels, feeds, infinite scroll) are scanned, and a link whose `href` or contents change is scanned again. Links removed from the page lose their badge and drop out of the counts.
+- **New and changed links.** Links added later (search panels, feeds, infinite scroll) are scanned, and a link whose `href` or text changes is scanned again, including text edited in place after the scan. Links removed from the page lose their badge and drop out of the counts.
 - **Single-page navigation.** When a site changes its address without loading a new page, the page's own address is judged again. If that verdict changed, every link is re-checked, since same-site links depend on it.
 - **Shadow roots.** Links inside open shadow roots are scanned and watched like the rest of the page. A shadow root is found when its host element is scanned; one attached later is picked up only for custom elements whose definition had not loaded yet. Closed shadow roots are not scanned.
 - **Editable areas** (email composers, rich-text editors) are left alone.
@@ -127,6 +186,8 @@ node demo/serve.js
 - <http://paypa1.localhost:8080/> is the same page on a hostname that looks like a paypal lookalike (Chrome resolves any `.localhost` name to your own machine). Use it to see the page-verdict behavior.
 - <http://one.two.three.four.tripwire.localhost:8080/> is the same page on a hostname with many subdomains. Its single-page navigation buttons make the page's own verdict change without a reload.
 
+The demo page's blocklist section does not depend on what the real lists contain. An unpacked (development) install also loads a small made-up list, [test/fixtures/blocklist.txt](test/fixtures/blocklist.txt), whose entries are on reserved names plus a few made-up paths. It appears in the popup as "Tripwire test list". A Web Store install never loads it.
+
 The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
 
 ## Icons
@@ -151,6 +212,7 @@ tools/make-icons.js        Regenerates icons/ from logo.png (development only)
 src/lib/analyzer.js        analyzeLink() and analyzePage(): pure, offline scoring and its config
 src/lib/settings.js        Display modes, storage keys, message names, toolbar count
 src/lib/bookkeeping.js     Pure helpers: distinct-destination counts, bounded verdict cache
+src/lib/blocklist.js       Blocklists: sources, URL normalization, parsing, matching, download checks
 src/lib/geometry.js        Pure helpers: badge and tooltip placement, grouping nearby links
 src/content/styles.js      CSS for the overlay, badges and tooltip
 src/content/badge.js       Creates a badge; exposes setVerdict() and its tooltip
@@ -158,8 +220,10 @@ src/content/overlay.js     The overlay: tracks links, positions badges, shows to
 src/content/scanner.js     Finds links, watches the page for changes, works through them in idle time
 src/content/content.js     Applies the mode, reports counts, answers the popup
 src/popup/                 Toolbar popup
-src/background/            Service worker: sets the toolbar count for each tab
-test/                      Tests for the analyzer, settings, bookkeeping, geometry and the demo page
+src/background/background.js  Service worker: sets the toolbar count for each tab
+src/background/lists.js    Downloads and stores the blocklists, answers lookups
+test/                      Tests for the analyzer, blocklists, settings, bookkeeping, geometry and the demo page
+test/fixtures/             A made-up blocklist for tests and the demo page
 demo/                      Demo page and a tiny server for it
 ```
 
@@ -169,8 +233,12 @@ Content scripts can't use ES module imports, so the files load in order through 
 
 | Permission | Why |
 | --- | --- |
-| `storage` | Saves the default display mode and per-site overrides in `chrome.storage.sync`. |
+| `storage` | Saves the default display mode and per-site overrides in `chrome.storage.sync`, and the blocklists' status in `chrome.storage.local`. |
+| `alarms` | Wakes the background worker every 6 hours to check for newer lists, and sooner to retry after a failed download. |
+| `https://malware-filter.gitlab.io/malware-filter/*` | Downloads the two blocklists from the project's main server (GitLab Pages). |
+| `https://curbengh.github.io/malware-filter/*` | The same files from the project's GitHub Pages mirror, used if the main server can't be reached. |
+| `https://malware-filter.pages.dev/*` | The same files from the project's Cloudflare Pages mirror, the last fallback. |
 
-That is the only permission requested. Tripwire does not ask for `tabs` or `activeTab`: the popup only needs the active tab's id, which is available without a permission, and it gets the site's hostname from the content script.
+The three host permissions cover only the folders the list files live in, and are used only to download those files. Tripwire does not ask for `tabs` or `activeTab`: the popup only needs the active tab's id, which is available without a permission, and it gets the site's hostname from the content script.
 
 The content script runs on all `http`/`https` pages, so Chrome will say Tripwire can "read and change your data on all websites"; that's needed to scan links and draw badges.

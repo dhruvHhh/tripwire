@@ -22,6 +22,7 @@
     sameVerdict,
     OVERLAY_TAG,
   } = Tripwire;
+  const { applyListing } = Tripwire.blocklist;
 
   const LINK_SELECTOR = 'a[href]';
   const PROCESSED_ATTR = 'data-tripwire-processed';
@@ -42,6 +43,10 @@
   const ELEMENTS_PER_CLOCK_CHECK = 128;
 
   const VERDICT_CACHE_SIZE = 2000;
+  // Blocklist answers remembered per address, and how many are asked at once.
+  const LISTING_CACHE_SIZE = 5000;
+  const LOOKUP_BATCH_SIZE = 400;
+  const LOOKUPABLE_RE = /^https?:\/\//i;
   // Custom elements seen before their definition loaded. They are re-checked
   // for a shadow root as the page keeps changing.
   const MAX_UNDEFINED_HOSTS = 500;
@@ -54,6 +59,9 @@
     childList: true,
     attributes: true,
     attributeFilter: ['href'],
+    // Text edited in place: a page could swap a link's visible text for a
+    // trusted-looking domain after it has been scanned.
+    characterData: true,
   };
 
   const requestIdle =
@@ -106,8 +114,12 @@
   /**
    * Starts scanning. `onChange` is called after any stretch of work that
    * changed the counts, the flagged links or the page verdict.
+   *
+   * `lookup(urls)` asks the service worker which addresses are on a
+   * blocklist. It resolves to { ready, results }, with one match or null per
+   * address, or to null if the worker can't be reached.
    */
-  function createScanner({ onChange }) {
+  function createScanner({ onChange, lookup }) {
     const overlay = createOverlay();
     const tally = createTally();
     // Verdicts keyed by href AND link text: the text/href mismatch check means
@@ -119,11 +131,23 @@
     // depends on it.
     let pageVerdict = analyzePage(pageUrl);
 
-    // One record per link that has a verdict: { id, link, text, url, verdict, item }.
+    // One record per link that has a verdict:
+    // { id, link, text, url, verdict, listing, item }. `verdict` is what is
+    // shown: the heuristics' verdict, overridden if the address is listed.
     const records = new Set();
     const recordByLink = new WeakMap();
     const recordById = new Map();
     let nextId = 1;
+
+    // Blocklist state. An address is undefined in `listings` until the
+    // service worker has answered for it; then it is a match or null.
+    const listings = createBoundedCache(LISTING_CACHE_SIZE);
+    const recordsByUrl = new Map(); // address -> Set of records pointing there
+    const pendingLookups = new Set();
+    let lookupInFlight = false;
+    // False once the worker says it has no lists yet; lookups resume when
+    // recheckListings() is called.
+    let listsReady = true;
 
     // The document and every open shadow root being watched.
     const watchedRoots = new WeakSet([document]);
@@ -146,6 +170,8 @@
     let changed = false;
 
     const stats = {
+      lookupBatches: 0, // Messages sent to the service worker.
+      addressesLookedUp: 0,
       linksAnalysed: 0, // Links given (or re-given) a verdict.
       analyserRuns: 0, // Of those, how many missed the cache and ran the analyzer.
       analyseMs: 0,
@@ -156,10 +182,27 @@
 
     // --- Records --------------------------------------------------------------
 
+    function indexByUrl(record) {
+      let group = recordsByUrl.get(record.url);
+      if (!group) {
+        group = new Set();
+        recordsByUrl.set(record.url, group);
+      }
+      group.add(record);
+    }
+
+    function unindexByUrl(record) {
+      const group = recordsByUrl.get(record.url);
+      if (!group) return;
+      group.delete(record);
+      if (group.size === 0) recordsByUrl.delete(record.url);
+    }
+
     function dropRecord(record) {
       records.delete(record);
       recordById.delete(record.id);
       recordByLink.delete(record.link);
+      unindexByUrl(record);
       tally.remove(record.url, record.verdict.level);
       overlay.remove(record.item);
       if (record.link.isConnected) record.link.removeAttribute(PROCESSED_ATTR);
@@ -185,6 +228,18 @@
       }
       stats.linksAnalysed++;
 
+      // A blocklist match overrides the heuristics. If the answer for this
+      // address isn't known yet, ask; the link is processed again when it is.
+      let listing = null;
+      if (lookup && LOOKUPABLE_RE.test(info.url)) {
+        listing = listings.get(info.url);
+        if (listing === undefined) {
+          listing = null;
+          if (listsReady) pendingLookups.add(info.url);
+        }
+      }
+      if (listing) verdict = applyListing(verdict, listing, Date.now());
+
       const display = {
         level: verdict.level,
         reasons: verdict.reasons,
@@ -193,11 +248,12 @@
       };
 
       if (!record) {
-        record = { id: nextId++, link, text: info.text, url: info.url, verdict, item: null };
+        record = { id: nextId++, link, text: info.text, url: info.url, verdict, listing, item: null };
         record.item = overlay.add(link, display);
         records.add(record);
         recordByLink.set(link, record);
         recordById.set(record.id, record);
+        indexByUrl(record);
         tally.add(record.url, verdict.level);
         link.setAttribute(PROCESSED_ATTR, '');
         changed = true;
@@ -209,9 +265,14 @@
       if (same) return;
 
       tally.remove(record.url, record.verdict.level);
+      if (record.url !== info.url) {
+        unindexByUrl(record);
+        record.url = info.url;
+        indexByUrl(record);
+      }
       record.text = info.text;
-      record.url = info.url;
       record.verdict = verdict;
+      record.listing = listing;
       tally.add(record.url, verdict.level);
       overlay.update(record.item, display);
       changed = true;
@@ -227,6 +288,62 @@
       for (const host of undefinedHosts) {
         if (!host.isConnected) undefinedHosts.delete(host);
       }
+    }
+
+    // --- Blocklist lookups ------------------------------------------------------
+
+    // Sends the next batch of addresses to the service worker. One batch is
+    // in flight at a time; the answers decide which links to look at again.
+    function flushLookups() {
+      if (!lookup || lookupInFlight || stopped || pendingLookups.size === 0) return;
+
+      const urls = [];
+      for (const url of pendingLookups) {
+        pendingLookups.delete(url);
+        urls.push(url);
+        if (urls.length >= LOOKUP_BATCH_SIZE) break;
+      }
+
+      lookupInFlight = true;
+      stats.lookupBatches++;
+      stats.addressesLookedUp += urls.length;
+      Promise.resolve(lookup(urls))
+        .catch(() => null)
+        .then((reply) => {
+          lookupInFlight = false;
+          if (stopped) return;
+
+          if (!reply || !reply.ready) {
+            // No lists yet (first install) or no worker: stop asking until
+            // told the lists have changed.
+            listsReady = false;
+            pendingLookups.clear();
+            return;
+          }
+
+          urls.forEach((url, index) => {
+            const listing = reply.results[index] || null;
+            listings.set(url, listing);
+            for (const record of recordsByUrl.get(url) || []) {
+              // Only links whose listed state actually changed need another look.
+              if (listing || record.listing) pendingLinks.add(record.link);
+            }
+          });
+          scheduleWork();
+          flushLookups();
+        });
+    }
+
+    // The lists changed (first download, an update, "Check now"): forget the
+    // answers and ask again for every address on the page.
+    function recheckListings() {
+      if (!lookup || stopped) return;
+      listings.clear();
+      listsReady = true;
+      for (const url of recordsByUrl.keys()) {
+        if (LOOKUPABLE_RE.test(url)) pendingLookups.add(url);
+      }
+      flushLookups();
     }
 
     // --- Shadow roots ---------------------------------------------------------
@@ -350,6 +467,7 @@
       stats.longestSliceMs = Math.max(stats.longestSliceMs, elapsed);
 
       scheduleWork();
+      flushLookups();
       flushChanges();
     }
 
@@ -364,8 +482,22 @@
     const observer = new MutationObserver((mutations) => {
       stats.mutationBatches++;
       checkPageUrl(); // A page that changes its address nearly always changes its DOM too.
+      // Text edits outside links are common (clocks, counters, typing) and
+      // move nothing we draw; only the rest is worth a repositioning pass.
+      let layoutMayHaveChanged = false;
       for (const mutation of mutations) {
         const { target } = mutation;
+
+        if (mutation.type === 'characterData') {
+          const parent = target.parentElement;
+          const owner = parent && parent.closest(LINK_SELECTOR);
+          if (owner && recordByLink.has(owner)) {
+            pendingLinks.add(owner);
+            layoutMayHaveChanged = true;
+          }
+          continue;
+        }
+        layoutMayHaveChanged = true;
 
         if (mutation.type === 'attributes') {
           // An href appeared, changed or went away.
@@ -388,7 +520,7 @@
       }
       if (undefinedHosts.size > 0) needsHostRecheck = true;
       // Added or removed content usually moves the links around it.
-      overlay.nudge();
+      if (layoutMayHaveChanged) overlay.nudge();
       scheduleWork();
     });
 
@@ -457,6 +589,9 @@
       return {
         linksTracked: records.size,
         linksAnalysed: stats.linksAnalysed,
+        lookupBatches: stats.lookupBatches,
+        addressesLookedUp: stats.addressesLookedUp,
+        listed: [...records].filter((record) => record.listing).length,
         analyserRuns: stats.analyserRuns,
         analyseMs: Math.round(stats.analyseMs * 10) / 10,
         mutationBatches: stats.mutationBatches,
@@ -495,6 +630,8 @@
       }
       records.clear();
       recordById.clear();
+      recordsByUrl.clear();
+      pendingLookups.clear();
       pendingLinks.clear();
       undefinedHosts.clear();
       pendingSubtrees.length = 0;
@@ -502,7 +639,7 @@
       pendingHostWalks.length = 0;
     }
 
-    return { getCounts, getSnapshot, getStats, focusLink, setDisplayFilter, stop };
+    return { getCounts, getSnapshot, getStats, focusLink, setDisplayFilter, recheckListings, stop };
   }
 
   Tripwire.createScanner = createScanner;

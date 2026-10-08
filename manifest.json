@@ -1,15 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Tripwire",
-  "version": "0.4.0",
-  "description": "Flags risky links on web pages with a small badge, using checks that run on your device.",
+  "version": "0.5.0",
+  "description": "Flags risky links on web pages with a small badge, using checks and blocklists that run on your device.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://malware-filter.gitlab.io/malware-filter/*",
+    "https://curbengh.github.io/malware-filter/*",
+    "https://malware-filter.pages.dev/*"
+  ],
   "action": {
     "default_title": "Tripwire",
     "default_popup": "src/popup/popup.html",
@@ -29,6 +34,7 @@
       "js": [
         "src/lib/analyzer.js",
         "src/lib/bookkeeping.js",
+        "src/lib/blocklist.js",
         "src/lib/geometry.js",
         "src/lib/settings.js",
         "src/content/styles.js",

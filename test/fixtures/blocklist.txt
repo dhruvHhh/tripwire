@@ -1,0 +1,36 @@
+! Title: Tripwire test list
+! Homepage: demo/links.html
+! A small made-up list in the same format as the real ones. It is loaded only
+! in a development install, so the demo page can show blocklist hits without
+! depending on what the live lists contain today.
+!
+! Its entries use reserved names (.example, .test, a documentation IP range)
+! that can't be real sites, plus specific made-up paths on three real hosts
+! to exercise path matching.
+!
+! --- Whole hosts ---
+blocklisted-phish.example
+malware-drop.test
+203.0.113.77
+!
+! --- Whole-host entries that must be IGNORED ---
+! A list must never turn every link to these red:
+github.com
+sites.google.com
+docs.google.com
+github.io
+bit.ly
+gov.in
+list-manage.com
+co.uk
+192.168.1.1
+!
+! --- One address on a host ---
+||shared-files.example/users/mallory/^$all
+||sites.google.com/view/tripwire-test-phish/^$all
+||bit.ly/tripwire-test-phish^$all
+||downloads.example/get.php?id=42^$all
+||files.example:8443/payload.bin^$all
+!
+! --- Entries the parser skips ---
+||wild*card.example/anything^$all

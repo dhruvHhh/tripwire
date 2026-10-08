@@ -31,7 +31,14 @@
     REVEAL: 'tripwire:reveal', // popup -> content: show every badge until reload
     FOCUS_LINK: 'tripwire:focus-link', // popup -> content: scroll to a link
     COUNTS: 'tripwire:counts', // content -> service worker: toolbar numbers
+    LOOKUP: 'tripwire:lookup', // content -> service worker: are these links on a blocklist?
+    UPDATE_LISTS: 'tripwire:update-lists', // popup -> service worker: "Check now"
   };
+
+  // Where the service worker keeps the blocklists' status, in
+  // chrome.storage.local. The popup shows it; content scripts watch its
+  // version to know when to check their links again.
+  const LIST_STATUS_KEY = 'blocklistStatus';
 
   // Name of the connection an open popup holds to its tab's content script,
   // over which the content script pushes state as it changes.
@@ -107,6 +114,7 @@
     DEFAULT_MODE_CHOICES,
     DEFAULT_MODE_KEY,
     MESSAGES,
+    LIST_STATUS_KEY,
     POPUP_PORT,
     isMode,
     siteKey,

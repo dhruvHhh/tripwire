@@ -46,7 +46,22 @@
     <select id="default-mode"></select>
   </section>
 
+  <!-- Blocklist status. Closed while all is well; opens itself on a problem. -->
+  <details id="lists" class="lists">
+    <summary>
+      <span class="lists-label">Blocklists</span>
+      <span id="lists-summary" class="lists-summary"></span>
+    </summary>
+    <ul id="lists-sources"></ul>
+    <button id="check-now" type="button">Check now</button>
+    <p id="lists-note" class="hint">
+      Lists are downloaded to your browser and checked there. The links you see are never sent anywhere.
+    </p>
+  </details>
+
+  <script src="../lib/analyzer.js"></script>
   <script src="../lib/settings.js"></script>
+  <script src="../lib/blocklist.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -310,3 +310,65 @@ test('getRegistrableDomain', () => {
     assert.equal(getRegistrableDomain(host), expected, host);
   }
 });
+
+// --- Click-tracking services ----------------------------------------------------
+// Newsletters and mail gateways send every link through a tracker, so text
+// that shows a different domain is normal there and must not be penalised.
+
+const MAIL = 'https://mail.example.org/inbox';
+const TRACKED = 'https://example.us7.list-manage.com/track/click?u=abc&id=1';
+
+const TRACKER_CASES = [
+  // No mismatch penalty, only a mild note.
+  { name: 'domain as text through Mailchimp', level: 'ok', reason: /click-tracking service \(list-manage\.com\)/i,
+    input: { href: TRACKED, text: 'myshop.com', pageUrl: MAIL } },
+  { name: 'full URL as text through SendGrid', level: 'ok', reason: /click-tracking service \(sendgrid\.net\)/i,
+    input: { href: 'https://u1234.ct.sendgrid.net/ls/click?upn=abc', text: 'https://www.example.org/offers', pageUrl: MAIL } },
+  { name: 'Microsoft Safe Links rewriting', level: 'ok', reason: /click-tracking service \(safelinks\.protection\.outlook\.com\)/i,
+    input: { href: 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.org&data=05', text: 'example.org', pageUrl: MAIL } },
+  { name: 'Proofpoint URL Defense rewriting', level: 'ok', reason: /click-tracking service \(urldefense\.com\)/i,
+    input: { href: 'https://urldefense.com/v3/__https://example.org__;!!abc', text: 'example.org', pageUrl: MAIL } },
+  { name: 'Amazon SES tracking', level: 'ok', reason: /click-tracking service \(awstrack\.me\)/i,
+    input: { href: 'https://abc123.r.us-east-1.awstrack.me/L0/https:%2F%2Fexample.org/1/0100', text: 'example.org', pageUrl: MAIL } },
+  { name: 'a real brand named in a tracked link', level: 'ok', reason: /click-tracking service/i,
+    input: { href: TRACKED, text: 'amazon.in', pageUrl: MAIL } },
+  { name: 'ordinary text through a tracker', level: 'ok', reason: /click-tracking service/i,
+    input: { href: 'https://ctrk.klclick.com/l/01ABCDEF', text: 'Shop the sale', pageUrl: MAIL } },
+
+  // The visible text is still checked for brand imitation.
+  { name: 'look-alike brand in the text of a tracked link', level: 'dangerous', reason: /link text imitates paypal\.com/i,
+    input: { href: TRACKED, text: 'paypa1.com', pageUrl: MAIL } },
+  { name: 'near-miss brand in the text of a tracked link', level: 'suspicious', reason: /link text closely resembles google\.com/i,
+    input: { href: TRACKED, text: 'gooogle.com', pageUrl: MAIL } },
+  { name: 'brand as a subdomain in the text of a tracked link', level: 'dangerous', reason: /link text uses "paypal\.com" as a subdomain/i,
+    input: { href: TRACKED, text: 'paypal.com.secure-login.net', pageUrl: MAIL } },
+
+  // Not a tracker: the mismatch penalty still applies.
+  { name: 'a host that merely contains a tracker name', level: 'suspicious', reason: /link text shows myshop\.com but it goes to/i,
+    input: { href: 'https://list-manage.com.evil.example/track', text: 'myshop.com', pageUrl: MAIL } },
+  { name: 'look-alike brand in the text of an untracked link', level: 'dangerous', reason: /link text imitates paypal\.com/i,
+    input: { href: 'https://evil.example/x', text: 'paypa1.com', pageUrl: MAIL } },
+];
+
+for (const { name, input, level, reason } of TRACKER_CASES) {
+  test(`click tracking, ${level}: ${name}`, () => {
+    const result = analyzeLink(input);
+    const detail = `score ${result.score}, reasons: ${JSON.stringify(result.reasons)}`;
+    assert.equal(result.level, level, detail);
+    assert.ok(result.reasons.some((r) => reason.test(r)), `no reason matches ${reason}; ${detail}`);
+  });
+}
+
+test('click tracking: a tracked link is never penalised for the mismatch itself', () => {
+  for (const { input, level } of TRACKER_CASES.filter((c) => c.level === 'ok')) {
+    const result = analyzeLink(input);
+    assert.ok(!result.reasons.some((r) => /link text shows/i.test(r)), JSON.stringify(result.reasons));
+    assert.equal(level, 'ok');
+  }
+});
+
+test('a shared-hosting subdomain is its own site', () => {
+  assert.equal(getRegistrableDomain('someone.github.io'), 'someone.github.io');
+  assert.equal(getRegistrableDomain('blog.someone.wordpress.com'), 'someone.wordpress.com');
+  assert.equal(getRegistrableDomain('shop.example.co.in'), 'example.co.in');
+});

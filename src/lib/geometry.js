@@ -50,16 +50,38 @@
    * edge, and `top`..`bottom` spans the badge and the line of link text it
    * marks. The tooltip goes below that, or above it when there is no room
    * below, and is kept inside the viewport.
+   *
+   * `target.avoid` (optional, `top`..`bottom`) is the whole link, which can
+   * be taller than its first line. The tooltip stays clear of all of it when
+   * it fits below or above; a link too tall for that (a whole card, say)
+   * falls back to keeping clear of the marked line.
    */
   function placeTooltip(target, tooltip, viewport) {
     const maxX = Math.max(TOOLTIP_MARGIN, viewport.width - tooltip.width - TOOLTIP_MARGIN);
     const x = Math.min(Math.max(TOOLTIP_MARGIN, target.x - TOOLTIP_GAP), maxX);
 
-    const below = target.bottom + TOOLTIP_GAP;
-    const above = target.top - TOOLTIP_GAP - tooltip.height;
-    const fitsBelow = below + tooltip.height + TOOLTIP_MARGIN <= viewport.height;
-    const y = fitsBelow || above < TOOLTIP_MARGIN ? below : above;
-    return { x, y };
+    const spots = (span) => {
+      const below = span.bottom + TOOLTIP_GAP;
+      const above = span.top - TOOLTIP_GAP - tooltip.height;
+      return {
+        below,
+        above,
+        fitsBelow: below + tooltip.height + TOOLTIP_MARGIN <= viewport.height,
+        fitsAbove: above >= TOOLTIP_MARGIN,
+      };
+    };
+
+    if (target.avoid) {
+      const whole = spots({
+        top: Math.min(target.top, target.avoid.top),
+        bottom: Math.max(target.bottom, target.avoid.bottom),
+      });
+      if (whole.fitsBelow) return { x, y: whole.below };
+      if (whole.fitsAbove) return { x, y: whole.above };
+    }
+
+    const line = spots(target);
+    return { x, y: line.fitsBelow || !line.fitsAbove ? line.below : line.above };
   }
 
   /**

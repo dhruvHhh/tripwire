@@ -21,8 +21,9 @@ function decodeEntities(value) {
 
 // A link's content is plain text or a single <img>, which has no text.
 // data-expect is what the heuristics alone say; data-listed says whether the
-// bundled test blocklist should match the link.
-const LINK_RE = /<a href="([^"]*)" data-expect="(\w+)"(?: data-listed="(\w+)")?>((?:<img[^>]*>)?[^<]*)<\/a>/g;
+// bundled test blocklist should match the link. A link may go on to say how
+// it opens (target, download) or carry an id for the page's script.
+const LINK_RE = /<a href="([^"]*)" data-expect="(\w+)"(?: data-listed="(\w+)")?(?: (?:target|download|id)="[^"]*")*>((?:<img[^>]*>)?[^<]*)<\/a>/g;
 const links = [...html.matchAll(LINK_RE)].map(([, href, expect, listed, content]) => ({
   href: decodeEntities(href),
   text: decodeEntities(content.replace(/<img[^>]*>/, '')),
@@ -134,4 +135,38 @@ test('demo page at its listed address: the page is listed and same-site links in
   // Links that leave the site keep their own verdict.
   const outside = analyzeLink({ href: 'https://en.wikipedia.org/wiki/Phishing', text: 'Read about phishing', pageUrl, pageVerdict });
   assert.equal(outside.level, 'ok');
+});
+
+// The demo's "Trusted domains" section.
+const trust = require('../src/lib/trust.js');
+
+test('demo page: trusting phonepay.example turns both of its links ok', () => {
+  const ours = links.filter((link) => trust.domainOf(link.href) === 'phonepay.example');
+  assert.ok(ours.length >= 2, 'the main domain and a subdomain');
+  for (const { href, text } of ours) {
+    const verdict = analyzeLink({ href, text, pageUrl: PAGE_URL });
+    assert.notEqual(verdict.level, 'ok', `${href} is flagged before it is trusted`);
+    assert.deepEqual(trust.resolveVerdict({ verdict, trusted: true }).reasons, [trust.TRUSTED_REASON]);
+    assert.equal(trust.resolveVerdict({ verdict, trusted: true }).level, 'ok');
+  }
+});
+
+test('demo page: a trusted domain on the test list is amber, with both facts', () => {
+  const ours = links.filter((link) => trust.domainOf(link.href) === 'partner-portal.example');
+  const listed = ours.find((link) => link.listed === 'yes');
+  const unlisted = ours.find((link) => link.listed === 'no');
+  assert.ok(listed && unlisted);
+
+  const listing = matchFixture(listed.href);
+  const verdict = analyzeLink({ href: listed.href, text: listed.text, pageUrl: PAGE_URL });
+  const shown = trust.resolveVerdict({ verdict, listing, trusted: true });
+  assert.equal(shown.level, 'suspicious');
+  assert.match(shown.reasons[0], /^Listed as phishing by Tripwire test list/);
+  assert.equal(shown.reasons[1], trust.TRUSTED_REASON);
+
+  // Trusting it needs the confirmation step, because of that listing.
+  assert.equal(trust.needsConfirmation('partner-portal.example', [trust.domainOf(listed.href)]), true);
+
+  const other = analyzeLink({ href: unlisted.href, text: unlisted.text, pageUrl: PAGE_URL });
+  assert.equal(trust.resolveVerdict({ verdict: other, listing: matchFixture(unlisted.href), trusted: true }).level, 'ok');
 });

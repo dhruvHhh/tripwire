@@ -1,353 +1,584 @@
-:root {
-  color-scheme: light dark;
-  --text: #202124;
-  --muted: #5f6368;
-  --surface: #ffffff;
-  --raised: #f1f3f4;
-  --border: #dadce0;
-  --accent: #1a73e8;
-  --ok: #1e8e3e;
-  --suspicious: #b06000;
-  --suspicious-fill: #f9ab00;
-  --dangerous: #d93025;
-}
+/* The popup. Colours and shared controls come from ../ui/theme.css.
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #e8eaed;
-    --muted: #9aa0a6;
-    --surface: #202124;
-    --raised: #2d2e31;
-    --border: #3c4043;
-    --accent: #8ab4f8;
-    --suspicious: #fdd663;
-    --dangerous: #f28b82;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
+   360px wide. Chrome shows at most 600px of a popup's height and scrolls the
+   rest, so the whole popup scrolls as one page; nothing inside it scrolls on
+   its own. */
 
 body {
-  width: 320px;
-  margin: 0;
-  padding: 14px;
-  background: var(--surface);
-  color: var(--text);
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  width: 360px;
+  overflow-x: hidden;
 }
 
-[hidden] {
-  display: none !important;
-}
-
-header {
+/* Header ------------------------------------------------------------------ */
+.tw-header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  background: var(--header-bg);
+  color: var(--header-text);
 }
 
-h1 {
-  margin: 0;
+.tw-header img {
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+
+.tw-header h1 {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
-.host {
+.tw-host {
   flex: 1;
   min-width: 0;
-  margin: 0;
   overflow: hidden;
-  color: var(--muted);
+  color: var(--header-muted);
+  font-size: 12.5px;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-h2 {
-  margin: 0 0 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+/* Page status ------------------------------------------------------------- */
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 12px 0;
+  padding: 10px 12px;
+  border-left: 4px solid transparent;
+  border-radius: 8px;
 }
 
-section,
-.counts {
-  margin-top: 12px;
+.status svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
 }
 
-.note,
-.hint {
-  margin: 8px 0 0;
-  color: var(--muted);
+.status-title {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
 }
 
-.hint {
-  font-size: 11px;
-}
-
-/* Page verdict */
-.alert {
-  margin-top: 0;
-  padding: 9px 10px;
-  border-left: 4px solid var(--suspicious-fill);
-  border-radius: 4px;
-  background: var(--raised);
-}
-
-.alert strong,
-.alert span {
-  display: block;
-}
-
-.alert span {
+.status-detail {
   margin-top: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
   overflow-wrap: anywhere;
 }
 
-.alert.dangerous {
-  border-left-color: var(--dangerous);
+.status-detail:empty {
+  display: none;
 }
 
-.alert.dangerous strong {
-  color: var(--dangerous);
+.status--neutral {
+  border-left-color: var(--control-border);
+  background: var(--surface);
 }
 
-.alert.suspicious strong {
-  color: var(--suspicious);
+.status--neutral svg {
+  color: var(--muted);
 }
 
-/* Counts */
-.counts {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.status--clean {
+  border-left-color: var(--ok-mark);
+  background: var(--ok-tint);
+}
+
+.status--clean svg {
+  color: var(--ok-mark);
+}
+
+.status--suspicious,
+.status--page-suspicious {
+  border-left-color: var(--warn-mark);
+  background: var(--warn-tint);
+}
+
+.status--suspicious svg,
+.status--page-suspicious svg {
+  color: var(--warn-mark);
+}
+
+.status--risky {
+  border-left-color: var(--danger-mark);
+  background: var(--danger-tint);
+}
+
+.status--risky svg {
+  color: var(--danger-mark);
+}
+
+/* The page itself is dangerous: the loudest thing in the popup. */
+.status--page-dangerous {
+  margin: 0;
+  padding: 14px 14px 15px;
+  border-left: 0;
+  border-radius: 0;
+  background: var(--danger-fill);
+  color: var(--on-danger);
+}
+
+.status--page-dangerous svg {
+  width: 26px;
+  height: 26px;
+  margin-top: 0;
+}
+
+.status--page-dangerous .status-title {
+  font-size: 16px;
+}
+
+.status--page-dangerous .status-detail {
+  margin-top: 4px;
+  color: var(--on-danger);
+  font-size: 13px;
+}
+
+/* Sections ---------------------------------------------------------------- */
+.block {
+  margin: 12px 12px 0;
+}
+
+h2 {
+  display: flex;
+  align-items: baseline;
   gap: 6px;
-  padding: 0;
-  list-style: none;
-}
-
-.counts li {
-  padding: 7px 4px;
-  border-radius: 6px;
-  background: var(--raised);
+  margin-bottom: 6px;
+  padding: 0 2px;
   color: var(--muted);
   font-size: 11px;
-  text-align: center;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.counts strong {
-  display: block;
-  color: var(--text);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
+h2 .aside {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
-.counts .dangerous.nonzero strong {
-  color: var(--dangerous);
+/* Flagged links ----------------------------------------------------------- */
+.entries {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
-.counts .suspicious.nonzero strong {
-  color: var(--suspicious);
+/* Inside the list the ring is drawn inward, so the list's edge can't clip it. */
+.entries :focus-visible {
+  outline-offset: -2px;
 }
 
-/* Controls */
-label {
-  display: block;
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-select,
-button {
+.more-links {
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+  padding: 7px 10px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
   color: var(--text);
-  font: inherit;
-}
-
-button {
+  font-weight: 600;
+  text-align: center;
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-  background: var(--raised);
+.more-links:hover {
+  background: var(--surface);
 }
 
-button:disabled {
+.entries-rest {
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
   color: var(--muted);
-  cursor: default;
+  font-size: 12px;
+  text-align: center;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-#reveal {
-  margin-top: 6px;
-}
-
-.global {
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-/* Flagged links */
-#flagged-list {
-  /* Chrome caps a popup at 600px tall; keep the whole popup under that. */
-  max-height: 120px;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-
-#flagged-list li + li {
-  margin-top: 4px;
-}
-
-#flagged-list button {
+.entry {
   display: grid;
-  grid-template-columns: 9px 1fr;
-  column-gap: 8px;
+  grid-template-columns: 1fr 34px;
+  background: var(--bg);
+}
+
+.entry + .entry {
+  border-top: 1px solid var(--line);
+}
+
+/* The row: scrolls to the link on the page. */
+.entry-main {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  column-gap: 9px;
   align-items: start;
-  padding: 6px 8px;
+  min-width: 0;
+  padding: 8px 4px 8px 11px;
+  border: 0;
+  background: none;
   text-align: left;
+  cursor: pointer;
 }
 
-.dot {
-  width: 9px;
-  height: 9px;
+.entry-main:hover,
+.entry-toggle:hover {
+  background: var(--surface);
+}
+
+.entry-main .dot {
   margin-top: 4px;
-  border-radius: 50%;
-  background: var(--suspicious-fill);
 }
 
-.dangerous > .dot {
-  background: var(--dangerous);
-}
-
-.link-text,
-.link-destination,
-.link-reason {
-  display: block;
+.entry-text,
+.entry-meta,
+.entry-reason {
   grid-column: 2;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.link-text {
-  font-weight: 600;
+.entry-text {
+  font-weight: 650;
 }
 
-.link-destination {
+.entry-meta {
   color: var(--muted);
+  font-size: 12.5px;
 }
 
-.link-reason {
-  font-size: 12px;
-  white-space: normal;
+.entry-meta .level {
+  font-weight: 650;
+}
+
+.entry--dangerous .level {
+  color: var(--danger-text);
+}
+
+.entry--suspicious .level {
+  color: var(--warn-text);
+}
+
+.entry-reason {
+  font-size: 12.5px;
+}
+
+/* The chevron: opens the row to show everything about the link. */
+.entry-toggle {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.entry-toggle svg,
+.group-chevron svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.entry-toggle svg,
+.group-chevron {
+  transition: transform 0.12s;
+}
+
+.entry.is-open .entry-toggle svg,
+.entry.is-open .group-chevron {
+  transform: rotate(180deg);
+}
+
+.entry-more {
+  grid-column: 1 / -1;
+  padding: 2px 12px 12px 30px;
+}
+
+/* The full list of reasons replaces the one-line reason. */
+.entry.is-open .entry-reason {
+  display: none;
+}
+
+.more-label {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reasons {
+  margin-top: 3px;
+  font-size: 12.5px;
+}
+
+/* The real destination, with the part that matters made obvious. */
+.dest {
+  margin-top: 3px;
+  color: var(--muted);
+  font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
   overflow-wrap: anywhere;
 }
 
-/* Blocklist status */
-html {
-  /* If the popup grows past Chrome's height limit it scrolls; without this
-     the scrollbar would also force a sideways one. */
-  overflow-x: hidden;
+.dest b {
+  color: var(--text);
+  font-weight: 700;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* The second step before trusting a domain that is on a blocklist. */
+.confirm {
+  margin-top: 10px;
+  padding: 9px 10px 10px;
+  border-left: 3px solid var(--warn-mark);
+  border-radius: 4px;
+  background: var(--warn-tint);
+  font-size: 12.5px;
+}
+
+.confirm b {
+  overflow-wrap: anywhere;
+}
+
+/* A group: links whose only reason is the warning on the page itself.
+   The whole row is one button that opens and closes the group. */
+.entry--group .entry-main {
+  grid-column: 1 / -1;
+  grid-template-columns: 10px 1fr 16px;
+  padding-right: 9px;
+}
+
+.entry--group .entry-text {
+  white-space: normal;
+}
+
+.group-chevron {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--muted);
+}
+
+.members {
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.members li + li {
+  border-top: 1px solid var(--line);
+}
+
+.member {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  background: none;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.member:hover {
+  background: var(--surface);
+}
+
+.member-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-path {
+  flex: 1 0 30%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font: 11.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.members-note {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Controls ---------------------------------------------------------------- */
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fields.is-single {
+  grid-template-columns: 1fr;
+}
+
+/* A heading with a small action at the end of its line. */
+.block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.block-head h2 {
+  margin-bottom: 0;
+}
+
+/* Padding makes the target 24px tall; the negative margin keeps the line
+   the height of its text. */
+.block-head .link-button {
+  margin: -5px -4px;
+  padding: 5px 4px;
+  font-size: 12px;
+}
+
+/* Blocklists -------------------------------------------------------------- */
 .lists {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin: 12px 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .lists summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  list-style: none;
   cursor: pointer;
-  list-style-position: inside;
 }
 
-.lists-label {
-  font-weight: 600;
+.lists summary::-webkit-details-marker {
+  display: none;
 }
 
-.lists-summary {
+.lists summary:hover {
+  background: var(--surface);
+}
+
+.lists-name {
+  font-weight: 650;
+}
+
+.lists-state {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lists-state.warn {
+  color: var(--warn-text);
+  font-weight: 650;
+}
+
+.lists summary svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
   color: var(--muted);
 }
 
-.lists-summary.warn,
-.lists-summary.error {
-  color: var(--suspicious);
-  font-weight: 600;
+.lists[open] summary svg {
+  transform: rotate(180deg);
 }
 
-#lists-sources {
-  margin: 8px 0;
-  padding: 0;
-  list-style: none;
+.lists-body {
+  padding: 2px 11px 11px;
 }
 
-#lists-sources li {
-  padding: 7px 9px;
-  border-left: 3px solid var(--ok);
+.source {
+  padding: 8px 10px;
+  border-left: 3px solid var(--ok-mark);
   border-radius: 4px;
-  background: var(--raised);
+  background: var(--surface);
 }
 
-#lists-sources li + li {
+.source + .source {
   margin-top: 6px;
 }
 
-#lists-sources li.warn {
-  border-left-color: var(--suspicious-fill);
+.source.warn {
+  border-left-color: var(--warn-mark);
 }
 
-#lists-sources li.error {
-  border-left-color: var(--dangerous);
+.source.pending {
+  border-left-color: var(--control-border);
 }
 
-#lists-sources li.pending {
-  border-left-color: var(--border);
+.source-name {
+  font-weight: 650;
 }
 
-.list-name,
-.list-state,
-.list-detail,
-.list-credit {
-  display: block;
+.source-state {
+  font-size: 12.5px;
+}
+
+.source.warn .source-state {
+  color: var(--warn-text);
+  font-weight: 650;
+}
+
+.source-credit {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
-.list-name {
-  font-weight: 600;
+.lists-body .btn {
+  margin-top: 9px;
 }
 
-.warn > .list-state,
-.error > .list-state {
-  color: var(--suspicious);
-  font-weight: 600;
-}
-
-.list-detail {
+/* Footer ------------------------------------------------------------------ */
+.tw-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
   font-size: 12px;
 }
 
-.list-credit {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.lists a {
-  color: var(--accent);
+@media (prefers-reduced-motion: reduce) {
+  .entry-toggle svg,
+  .group-chevron {
+    transition: none;
+  }
 }

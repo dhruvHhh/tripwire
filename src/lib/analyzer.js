@@ -522,6 +522,14 @@
     return 'ok';
   }
 
+  // How a reason starts when it is about the page the link is on, not about
+  // the link. The popup uses this to tell the two apart.
+  const PAGE_REASON_PREFIX = 'This page itself looks ';
+
+  function isPageReason(reason) {
+    return typeof reason === 'string' && reason.startsWith(PAGE_REASON_PREFIX);
+  }
+
   // `multiplier` scales the total (same-site links on a clean page).
   // `flaggedPage` is the page's own verdict when the link stays on a page that
   // is itself flagged: the link then inherits at least the page's score.
@@ -537,7 +545,7 @@
       // page's. Say it once, as a statement about the page.
       const summary = flaggedPage.reasons[0] || 'see the page address';
       reasons = [
-        `This page itself looks ${flaggedPage.level}: ${summary[0].toLowerCase()}${summary.slice(1)}`,
+        `${PAGE_REASON_PREFIX}${flaggedPage.level}: ${summary[0].toLowerCase()}${summary.slice(1)}`,
         ...reasons.filter((reason) => !flaggedPage.reasons.includes(reason)),
       ];
     } else if (multiplier !== 1 && total > 0) {
@@ -752,7 +760,7 @@
   // Exports: a global for the content script, module.exports for Node tests.
   // ---------------------------------------------------------------------------
 
-  const api = { analyzeLink, analyzePage, getRegistrableDomain, CONFIG };
+  const api = { analyzeLink, analyzePage, getRegistrableDomain, isPageReason, CONFIG };
 
   globalThis.Tripwire = globalThis.Tripwire || {};
   Object.assign(globalThis.Tripwire, api);

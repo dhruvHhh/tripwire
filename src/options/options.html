@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tripwire options</title>
+  <link rel="icon" href="../../icons/icon32.png">
+  <link rel="stylesheet" href="../ui/theme.css">
+  <link rel="stylesheet" href="../ui/page.css">
+</head>
+<body>
+  <header class="page-header">
+    <div class="page-header-inner">
+      <img src="../../icons/icon128.png" alt="" width="44" height="44">
+      <div>
+        <h1>Tripwire options</h1>
+        <p>Changes are saved as you make them.</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="default-heading">
+      <h2 id="default-heading">Badges on pages</h2>
+      <p>Which links get a badge. This applies to every site that has no setting of its own.</p>
+      <fieldset id="default-mode" class="choices">
+        <legend class="sr-only">Badges on pages</legend>
+      </fieldset>
+    </section>
+
+    <section aria-labelledby="warning-heading">
+      <h2 id="warning-heading">Dangerous links</h2>
+      <div class="choices">
+        <label>
+          <input type="checkbox" id="click-warning">
+          <span class="row-main">
+            <span class="row-name">Warn me before I open a dangerous link</span>
+            <span class="row-note">
+              Clicking a red link shows a warning first, with where the link really goes, and a choice of
+              "Go back" or "Continue anyway". It covers links you click or open with the keyboard. It can't
+              stop a page that sends you somewhere by itself.
+            </span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <section aria-labelledby="sites-heading">
+      <h2 id="sites-heading" tabindex="-1">Sites with their own setting</h2>
+      <p class="hint">
+        To give a site its own setting, open the Tripwire popup while you are on it and choose under "On this site".
+        Removing one here puts that site back on the setting above.
+      </p>
+      <ul id="sites" class="rows" hidden></ul>
+      <p id="sites-empty" class="empty" hidden>No site has its own setting.</p>
+    </section>
+
+    <section aria-labelledby="trusted-heading">
+      <h2 id="trusted-heading" tabindex="-1">Trusted domains</h2>
+      <p class="hint">
+        Links to a trusted domain are not flagged. A blocklist match is the exception: if a trusted domain has a link
+        on a blocklist, that link is shown as suspicious and the match is stated. To trust a domain, open a flagged
+        link's details in the popup and choose "Trust this domain".
+      </p>
+      <ul id="trusted" class="rows" hidden></ul>
+      <p id="trusted-empty" class="empty" hidden>You have not trusted any domain.</p>
+    </section>
+
+    <p class="page-footer">
+      These settings are kept in your browser's own settings storage. If you have turned on sync in your browser, the
+      browser carries them to your other devices. Tripwire sends them nowhere, and the links you see never leave your
+      browser.
+    </p>
+  </main>
+
+  <!-- Read out by screen readers when something is saved or removed. -->
+  <p id="announce" class="sr-only" role="status"></p>
+
+  <script src="../lib/analyzer.js"></script>
+  <script src="../lib/settings.js"></script>
+  <script src="../lib/blocklist.js"></script>
+  <script src="../lib/trust.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

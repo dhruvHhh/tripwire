@@ -8,55 +8,66 @@
 (() => {
   'use strict';
 
+  const { splitDestination } = Tripwire.findings;
+
   const HEADLINES = {
     ok: 'No red flags found (not a guarantee)',
     suspicious: 'Suspicious link',
     dangerous: 'Likely dangerous link',
   };
+  // A link that is "ok" only because the user trusts its domain.
+  const TRUSTED_HEADLINE = 'Trusted domain';
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
 
   function createBadge() {
-    const element = document.createElement('span');
-    element.className = 'tripwire-badge';
-    element.dataset.level = 'unknown';
-    element.hidden = true;
+    const dot = element('span', 'tripwire-badge');
+    dot.dataset.level = 'unknown';
+    dot.hidden = true;
 
-    let verdict = { level: 'unknown', reasons: [] };
+    let verdict = { level: 'unknown', reasons: [], url: '', trusted: false };
 
-    function setVerdict(level, reasons = []) {
-      verdict = { level, reasons };
-      element.dataset.level = level;
+    function setVerdict({ level, reasons = [], url = '', trusted = false }) {
+      verdict = { level, reasons, url, trusted };
+      dot.dataset.level = level;
     }
 
-    // Fills `container` with this badge's tooltip. Reasons quote hostnames and
-    // link text from the page, so everything goes in as text, never as HTML.
+    // Fills `container` with this badge's tooltip: the verdict, the reasons,
+    // then where the link really goes. Reasons quote hostnames and link text
+    // from the page, so everything goes in as text, never as HTML.
     function renderTooltip(container) {
-      const { level, reasons } = verdict;
+      const { level, reasons, url, trusted } = verdict;
       container.dataset.level = level;
 
-      const headline = document.createElement('strong');
-      headline.textContent = HEADLINES[level] || '';
-      container.replaceChildren(headline);
-      if (reasons.length === 0) return;
+      const trustedOk = trusted && level === 'ok';
+      const parts = [element('strong', 'tripwire-headline', trustedOk ? TRUSTED_HEADLINE : HEADLINES[level] || '')];
 
-      // An "ok" link can still carry low-weight observations; label them so
-      // they don't read as red flags.
-      if (level === 'ok') {
-        const label = document.createElement('span');
-        label.className = 'tripwire-notes-label';
-        label.textContent = 'Minor notes:';
-        container.appendChild(label);
+      if (reasons.length > 0) {
+        // An "ok" link can still carry low-weight observations; label them so
+        // they don't read as red flags.
+        if (level === 'ok' && !trusted) parts.push(element('span', 'tripwire-label', 'Minor notes'));
+        const list = element('ul');
+        for (const reason of reasons) list.appendChild(element('li', '', reason));
+        parts.push(list);
       }
 
-      const list = document.createElement('ul');
-      for (const reason of reasons) {
-        const item = document.createElement('li');
-        item.textContent = reason;
-        list.appendChild(item);
+      // The whole host, with the registrable domain (whose site it is) in bold.
+      const { userinfo, subdomains, domain, port } = splitDestination(url);
+      if (domain) {
+        const destination = element('span', 'tripwire-destination');
+        destination.append(userinfo + subdomains, element('strong', '', domain), port);
+        parts.push(element('span', 'tripwire-label', 'Goes to'), destination);
       }
-      container.appendChild(list);
+
+      container.replaceChildren(...parts);
     }
 
-    return { element, setVerdict, renderTooltip };
+    return { element: dot, setVerdict, renderTooltip };
   }
 
   Tripwire.createBadge = createBadge;

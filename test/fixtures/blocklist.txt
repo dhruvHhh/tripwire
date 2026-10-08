@@ -32,6 +32,9 @@ co.uk
 ||downloads.example/get.php?id=42^$all
 ||files.example:8443/payload.bin^$all
 !
+! --- For the demo page's "trusted domain that is on a blocklist" case ---
+||partner-portal.example/files/invoice.html^$all
+!
 ! --- The demo page itself, at one address ---
 ! Open http://listed.localhost:8080/demo to see a page that is itself listed.
 ||listed.localhost:8080/demo^$all

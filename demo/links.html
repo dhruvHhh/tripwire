@@ -258,6 +258,65 @@
     <button type="button" id="retext">Change its text</button>
   </p>
 
+  <h2 class="layout">Click-time warning</h2>
+  <p class="expect">
+    The links in this section are live; everywhere else on this page clicking is switched off.
+    Clicking a red link shows Tripwire's warning first. "Go back", Escape and a click outside the
+    box all keep you here. "Continue anyway" does what your click would have done. The addresses
+    are made up, so where a page should open you will see the browser's "site can't be reached"
+    page: that is the expected result. The warning can be turned off on the options page.
+  </p>
+  <div class="live">
+    <h3>How the link opens</h3>
+    <ul>
+      <li><a href="https://www.paypa1.example/signin" data-expect="dangerous">Sign in</a><span class="why">click: "opens in this tab". Ctrl-click or middle-click: "opens in a new tab". Shift-click: "opens in a new window". Tab to it and press Enter: the same warning</span></li>
+      <li><a href="https://www.paypa1.example/new-tab" data-expect="dangerous" target="_blank">Sign in, in a new tab</a><span class="why">target="_blank": "opens in a new tab", and Continue opens one</span></li>
+      <li><a href="/tripwire-demo-download" data-expect="ok" download="tripwire-demo.txt">Download a file</a><span class="why">green here, so it just downloads a copy of this page. At <code>http://listed.localhost:8080/demo</code> it is red: "downloads a file", and Continue downloads it</span></li>
+      <li><a href="https://www.paypal.com.account-security.verify.session-8842.blocklisted-phish.example/webapps/mpp/account/verify?cmd=_login-submit&amp;dispatch=5885d80a13c0db1f8e263663d3faee8d0b9dcb01a9b6dc564e45f62871326a5e&amp;session=8842-19f0c7&amp;locale=en_IN" data-expect="dangerous" data-listed="yes">PayPal: confirm your account</a><span class="why">a long, listed address: the heading says "listed as phishing", the host is shown whole, and "Show full address" shows the rest</span></li>
+    </ul>
+
+    <h3>No warning</h3>
+    <ul>
+      <li><a href="http://203.0.113.9/login" data-expect="suspicious">Log in at a raw IP address</a><span class="why">amber: only red links are stopped</span></li>
+      <li><a href="https://example.com/" data-expect="ok">An ordinary link</a><span class="why">green: opens at once</span></li>
+    </ul>
+
+    <h3>Harder cases</h3>
+    <ul>
+      <li><a href="https://example.com/harmless" data-expect="ok" id="bait">A link that changes when pressed</a> <button type="button" id="reset-bait">Reset it</button><span class="why">green until the mouse button goes down, then it points at paypa1.example. Tripwire looks again in the middle of the click: warning</span></li>
+      <li><a href="https://www.paypa1.example/scripted" data-expect="dangerous" id="scripted">A link the page clicks</a> <button type="button" id="script-click">Have the page click it</button><span class="why">a scripted click follows a link too, so it gets the warning</span></li>
+      <li><button type="button" id="open-modal">Open a dialog with a red link</button><span class="why">the warning appears over the page's own dialog and its buttons work</span></li>
+    </ul>
+    <dialog id="demo-modal">
+      <p>A page's own modal dialog. <a href="https://www.paypa1.example/in-dialog" data-expect="dangerous">Sign in</a></p>
+      <button type="button" id="close-modal">Close</button>
+    </dialog>
+  </div>
+
+  <h2 class="layout">Trusted domains</h2>
+  <p class="expect">
+    To trust a domain: open the popup, open a flagged link with the arrow at its right, and choose
+    "Trust this domain". The page updates by itself. Trusted domains are listed on the options
+    page ("Options" at the bottom of the popup), where each has a "Remove" button.
+  </p>
+
+  <h3>A domain you know</h3>
+  <ul>
+    <li><a href="https://www.phonepay.example/rewards" data-expect="suspicious">PhonePay rewards</a><span class="why">amber: two edits from phonepe. Trust phonepay.example and it turns green, with "You trusted this domain"</span></li>
+    <li><a href="https://pay.phonepay.example/checkout" data-expect="suspicious">PhonePay checkout</a><span class="why">a subdomain of it: trusted along with it</span></li>
+  </ul>
+
+  <h3>A trusted domain that is on a blocklist</h3>
+  <p class="expect">
+    The test list names one page on this domain. Choosing "Trust this domain" for it asks you to
+    confirm first. Once trusted, the listed link is amber, not green, and its tooltip gives both
+    facts: the blocklist match and "You trusted this domain".
+  </p>
+  <ul>
+    <li><a href="https://partner-portal.example/files/invoice.html" data-expect="ok" data-listed="yes">Download the invoice</a><span class="why">red: listed. Amber once you trust partner-portal.example</span></li>
+    <li><a href="https://partner-portal.example/about" data-expect="ok" data-listed="no">About the partner portal</a><span class="why">green before and after: this page is not listed</span></li>
+  </ul>
+
   <h2 class="ok">Green: no red flags found</h2>
   <ul>
     <li><a href="https://en.wikipedia.org/wiki/Phishing" data-expect="ok">Read about phishing</a><span class="why">ordinary link</span></li>
@@ -328,12 +387,28 @@
 
   <script>
     // Keep the examples from navigating anywhere. composedPath() sees links
-    // inside shadow roots, which event.target does not.
+    // inside shadow roots, which event.target does not. The links in the
+    // click-warning section are left live, so the warning can be tried.
+    const isLive = (node) => node.classList && node.classList.contains('live');
     document.addEventListener('click', (event) => {
-      if (event.composedPath().some((node) => node.localName === 'a')) event.preventDefault();
+      const path = event.composedPath();
+      if (path.some(isLive)) return;
+      if (path.some((node) => node.localName === 'a')) event.preventDefault();
     });
 
     const byId = (id) => document.getElementById(id);
+
+    // Click-warning section.
+    byId('open-modal').addEventListener('click', () => byId('demo-modal').showModal());
+    byId('close-modal').addEventListener('click', () => byId('demo-modal').close());
+    byId('script-click').addEventListener('click', () => byId('scripted').click());
+    // The classic swap: harmless until the mouse button goes down.
+    byId('bait').addEventListener('mousedown', () => {
+      byId('bait').href = 'https://www.paypa1.example/swapped';
+    });
+    byId('reset-bait').addEventListener('click', () => {
+      byId('bait').href = 'https://example.com/harmless';
+    });
 
     function makeLink(href, text) {
       const link = document.createElement('a');

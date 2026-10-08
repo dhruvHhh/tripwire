@@ -410,13 +410,13 @@ test('fixture list: parses, and its "must be ignored" entries are ignored', () =
   const screened = screenEntries(parsed);
   assert.equal(parsed.title, 'Tripwire test list');
   assert.deepEqual(screened.hosts, ['blocklisted-phish.example', 'malware-drop.test', '203.0.113.77']);
-  assert.equal(screened.urls.length, 6);
+  assert.equal(screened.urls.length, 7);
   assert.deepEqual(
     screened.ignored.map((entry) => entry.host),
     ['github.com', 'sites.google.com', 'docs.google.com', 'github.io', 'bit.ly', 'gov.in', 'list-manage.com', 'co.uk', '192.168.1.1'],
   );
   assert.equal(parsed.rejected, 1, 'the wildcard entry');
-  assert.deepEqual(checkDownload({ source: CONFIG.fixture, bytes: FIXTURE.length, parsed, entries: 9 }), { ok: true });
+  assert.deepEqual(checkDownload({ source: CONFIG.fixture, bytes: FIXTURE.length, parsed, entries: 10 }), { ok: true });
 });
 
 // --- Judging a download ----------------------------------------------------------

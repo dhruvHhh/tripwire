@@ -281,7 +281,7 @@
     function show(item, x, y) {
       if (!item.badge) {
         item.badge = createBadge();
-        item.badge.setVerdict(item.level, item.reasons);
+        item.badge.setVerdict(item);
         shadow.appendChild(item.badge.element);
       }
       const { element } = item.badge;
@@ -323,9 +323,16 @@
     }
 
     function positionTooltip() {
-      // Clear of both the badge and the line of text it marks.
+      // Clear of the badge and the line of text it marks, and of the rest of
+      // the link too (a link can run over several lines) when there is room.
+      const link = tooltipItem.link.getBoundingClientRect();
       const { x, y } = placeTooltip(
-        { x: tooltipItem.viewX, top: tooltipItem.viewY, bottom: tooltipItem.viewBottom },
+        {
+          x: tooltipItem.viewX,
+          top: tooltipItem.viewY,
+          bottom: tooltipItem.viewBottom,
+          avoid: { top: link.top, bottom: link.bottom },
+        },
         tooltipSize,
         viewport,
       );
@@ -600,11 +607,13 @@
 
     // Starts tracking a link and returns its handle. Whether it gets a badge
     // is up to the current filter.
-    function add(link, { level, reasons, key }) {
+    function add(link, { level, reasons, url, trusted, key }) {
       const item = {
         link,
         level,
         reasons,
+        url, // Where the link goes, for the tooltip.
+        trusted,
         key,
         wanted: false,
         onScreen: false,
@@ -631,13 +640,15 @@
     }
 
     // The link's verdict or contents changed.
-    function updateItem(item, { level, reasons, key }) {
+    function updateItem(item, { level, reasons, url, trusted, key }) {
       if (!items.has(item)) return;
       item.level = level;
       item.reasons = reasons;
+      item.url = url;
+      item.trusted = trusted;
       item.key = key;
       item.anchorOffset = null; // Its text may have changed shape.
-      if (item.badge) item.badge.setVerdict(level, reasons);
+      if (item.badge) item.badge.setVerdict(item);
       if (tooltipItem === item) hideTooltip();
       setWanted(item, Boolean(filter(item)));
       syncWatchers();

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to Tripwire</title>
+  <link rel="icon" href="../../icons/icon32.png">
+  <link rel="stylesheet" href="../ui/theme.css">
+  <link rel="stylesheet" href="../ui/page.css">
+</head>
+<body>
+  <!-- Opened once, when Tripwire is first installed (see background.js). A
+       static page: no scripts. -->
+  <header class="page-header">
+    <div class="page-header-inner">
+      <img src="../../icons/icon128.png" alt="" width="44" height="44">
+      <div>
+        <h1>Tripwire is installed</h1>
+        <p>It checks the links on the pages you visit and marks the risky ones before you click.</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="what-heading">
+      <h2 id="what-heading">What it does</h2>
+      <p>
+        On every page, Tripwire looks at each link: where it really goes, whether that address imitates a well-known
+        site, whether the link's text says one site while the link goes to another, and whether the address is on a
+        blocklist of known phishing and malware pages. Links it has doubts about get a small coloured dot at their
+        top right corner. Rest the pointer on a dot to see the reasons and the real destination.
+      </p>
+      <p>
+        If you click a red link, Tripwire asks first. It shows where the link really goes and why it was flagged,
+        and you choose "Go back" or "Continue anyway". You can turn that off on the options page.
+      </p>
+      <p>
+        It starts working on pages you open from now on. Tabs that were already open need a reload first.
+      </p>
+    </section>
+
+    <section aria-labelledby="colours-heading">
+      <h2 id="colours-heading">What the colours mean</h2>
+      <ul class="rows">
+        <li>
+          <span class="dot dot--dangerous" aria-hidden="true"></span>
+          <span class="row-main">
+            <span class="row-name">Red: likely dangerous</span>
+            <span class="row-note">The address is on a blocklist, or it imitates a well-known site. Don't sign in or download anything there unless you are sure.</span>
+          </span>
+        </li>
+        <li>
+          <span class="dot dot--suspicious" aria-hidden="true"></span>
+          <span class="row-main">
+            <span class="row-name">Amber: suspicious</span>
+            <span class="row-note">Something about the link is unusual, such as a shortened address or a raw IP address. Check where it goes before you follow it.</span>
+          </span>
+        </li>
+        <li>
+          <span class="dot dot--ok" aria-hidden="true"></span>
+          <span class="row-main">
+            <span class="row-name">Green: no red flags found</span>
+            <span class="row-note">Tripwire found nothing wrong. That is not a guarantee. Green dots are hidden unless you ask for them, to keep pages quiet.</span>
+          </span>
+        </li>
+      </ul>
+      <p class="hint" style="margin-top: 10px">
+        The number on the Tripwire toolbar icon is how many risky links the page has: red if any are dangerous,
+        amber if they are only suspicious.
+      </p>
+    </section>
+
+    <section aria-labelledby="privacy-heading">
+      <h2 id="privacy-heading">The privacy promise</h2>
+      <div class="callout">
+        <p><strong>The links you see never leave your browser.</strong></p>
+        <p>
+          Every check runs on your device. The blocklists are downloaded to your browser and looked up there;
+          Tripwire never sends a page's address or its links to anyone, and it has no account, no analytics and
+          no ads.
+        </p>
+      </div>
+    </section>
+
+    <section aria-labelledby="modes-heading">
+      <h2 id="modes-heading">Choosing what you see</h2>
+      <p>Click the Tripwire icon in the toolbar to open its popup. There you can pick how badges are shown, for one site or for all of them:</p>
+      <ul class="rows">
+        <li><span class="row-main"><span class="row-name">Risky only (the usual setting)</span><span class="row-note">A badge on suspicious and dangerous links only.</span></span></li>
+        <li><span class="row-main"><span class="row-name">Show all</span><span class="row-note">A badge on every link, including the ones with no red flags.</span></span></li>
+        <li><span class="row-main"><span class="row-name">Only when I click</span><span class="row-note">No badges until you ask for them in the popup. The toolbar icon still counts risky links.</span></span></li>
+        <li><span class="row-main"><span class="row-name">Off for this site</span><span class="row-note">Nothing is checked on that site.</span></span></li>
+      </ul>
+      <p style="margin-top: 10px">
+        The popup also lists the page's flagged links with every reason, and lets you trust a domain you know so it
+        stops being flagged. Trusted domains and site settings can be reviewed on the
+        <a href="../options/options.html">options page</a>.
+      </p>
+      <p class="hint">
+        If you can't see the icon, open the extensions menu (the puzzle piece in the toolbar) and pin Tripwire.
+      </p>
+    </section>
+
+    <p class="page-footer">
+      Tripwire is a second opinion, not a guarantee. A link with no badge can still be harmful, and a red one can
+      be a false alarm. When something matters, check the address yourself.
+    </p>
+  </main>
+</body>
+</html>

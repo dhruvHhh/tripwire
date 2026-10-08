@@ -1,0 +1,230 @@
+/* Tripwire's colours and the controls its pages share (popup, options,
+   welcome).
+
+   The colour values are the same ones as in src/lib/theme.js, which the
+   on-page tooltip uses; test/theme.test.js fails if the two drift apart, and
+   checks every text and control pairing against WCAG AA. Light is the
+   default; dark follows the browser. */
+
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f3f4f6;
+  --line: #dfe2e7;
+  --control-border: #858b95;
+  --text: #15171a;
+  --muted: #59606b;
+  --header-bg: #15171a;
+  --header-text: #ffffff;
+  --header-muted: #b8bec8;
+  --danger-fill: #c8241f;
+  --on-danger: #ffffff;
+  --danger-text: #b3201b;
+  --danger-mark: #e5352f;
+  --danger-tint: #fdecea;
+  --warn-text: #8a4b00;
+  --warn-mark: #b96a00;
+  --warn-tint: #fff4d9;
+  --ok-text: #18722f;
+  --ok-mark: #1f8f3d;
+  --ok-tint: #e8f5ec;
+  --focus: #15171a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --line: #2e3238;
+    --control-border: #6b727d;
+    --text: #f2f3f5;
+    --muted: #aab1bc;
+    --header-bg: #0b0c0e;
+    --header-text: #ffffff;
+    --header-muted: #b8bec8;
+    --danger-fill: #c8241f;
+    --on-danger: #ffffff;
+    --danger-text: #ff8078;
+    --danger-mark: #f2554e;
+    --danger-tint: #3a1614;
+    --warn-text: #f5c04a;
+    --warn-mark: #f0a91a;
+    --warn-tint: #33270a;
+    --ok-text: #5fd37f;
+    --ok-mark: #3fb963;
+    --ok-tint: #11301b;
+    --focus: #ffffff;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* :where() keeps these resets at zero specificity, so any class wins. */
+:where(p, h1, h2, h3, ul, ol, dl, dd) {
+  margin: 0;
+  padding: 0;
+}
+
+:where(ul, ol) {
+  list-style: none;
+}
+
+:where(button, select, input) {
+  font: inherit;
+  color: inherit;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Focus: the same ring everywhere, visible on every background. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Buttons ---------------------------------------------------------------- */
+.btn {
+  padding: 6px 11px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--surface);
+}
+
+.btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  background: var(--bg);
+}
+
+.btn--primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.btn--primary:hover {
+  background: var(--text);
+  opacity: 0.88;
+}
+
+/* A button that reads as a link. */
+.link-button {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Labelled selects ------------------------------------------------------- */
+.field label {
+  display: block;
+  margin: 0 0 3px 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+/* The verdict dot, as drawn next to links. */
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--control-border);
+}
+
+.dot--dangerous {
+  background: var(--danger-mark);
+}
+
+.dot--suspicious {
+  background: var(--warn-mark);
+}
+
+.dot--ok {
+  background: var(--ok-mark);
+}
+
+/* Reasons, one per line with a small bullet. */
+.reasons li {
+  position: relative;
+  padding-left: 12px;
+  overflow-wrap: anywhere;
+}
+
+.reasons li + li {
+  margin-top: 3px;
+}
+
+.reasons li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.reasons li.trusted::before {
+  background: var(--ok-mark);
+}

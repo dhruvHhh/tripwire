@@ -142,3 +142,38 @@ test('pickGroupLeaders: interleaved groups', () => {
 test('pickGroupLeaders: empty input', () => {
   assert.deepEqual(pickGroupLeaders([], GAP), []);
 });
+
+// The same badge, on a link whose box runs from `linkTop` to `linkBottom`.
+const onLink = (x, top, linkTop, linkBottom) => ({ ...target(x, top), avoid: { top: linkTop, bottom: linkBottom } });
+
+test('placeTooltip: stays clear of a link that runs over several lines', () => {
+  const t = onLink(400, 200, 204, 290);
+  const { y } = placeTooltip(t, TIP, SCREEN);
+  assert.ok(y >= 290, 'below the last line of the link, not just the first');
+});
+
+test('placeTooltip: goes above the whole link when there is no room below it', () => {
+  const t = onLink(400, 560, 564, 660);
+  const { y } = placeTooltip(t, TIP, SCREEN);
+  assert.ok(y + TIP.height <= t.top, 'above the badge and the link');
+  assert.ok(y >= 0);
+});
+
+test('placeTooltip: a link too tall to avoid falls back to its marked line', () => {
+  const t = onLink(400, 40, 44, 690); // A card-sized link filling the screen.
+  const { y } = placeTooltip(t, TIP, SCREEN);
+  assert.equal(y, placeTooltip(target(400, 40), TIP, SCREEN).y);
+  assert.ok(y >= t.bottom, 'clear of the marked line');
+  assert.ok(y + TIP.height <= SCREEN.height, 'still on screen');
+});
+
+test('placeTooltip: never covers the badge or its line, wherever the link is', () => {
+  for (const top of [0, 10, 150, 340, 600, 670]) {
+    for (const linkHeight of [20, 60, 300, 900]) {
+      const t = onLink(500, top, top + 4, top + 4 + linkHeight);
+      const { y } = placeTooltip(t, TIP, SCREEN);
+      const clear = y >= t.bottom || y + TIP.height <= t.top;
+      assert.ok(clear, `badge at ${top}, link ${linkHeight}px tall`);
+    }
+  }
+});

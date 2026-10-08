@@ -2,7 +2,7 @@
 
 Tripwire is a Chrome extension that scans every link on a web page and marks the risky ones with a small badge, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
 
-> **Status:** version 0.5.1. Links are scored by checks on the link itself and against two downloaded blocklists of known phishing and malware addresses. By default only amber and red links are marked. The links you browse never leave your browser; see [Privacy](#privacy).
+> **Status:** version 0.6.0. Links are scored by checks on the link itself and against two downloaded blocklists of known phishing and malware addresses. By default only amber and red links are marked, and clicking a red link shows a warning first. The links you browse never leave your browser; see [Privacy](#privacy).
 
 ## Roadmap
 
@@ -11,8 +11,23 @@ Tripwire is a Chrome extension that scans every link on a web page and marks the
    - ✅ Follow-up: lookalike-page detection, display modes, toolbar count and popup, and badges drawn in an overlay instead of inside the page.
 3. ✅ **Dynamic pages and performance:** scan links added or changed after load, follow single-page navigation, scan open shadow roots, and do all of it in idle time.
 4. ✅ **Local blocklists:** download public phishing and malware lists and check links against them inside the browser. No link is sent to any server.
-5. **UI:** an options page, richer link details, and managing the per-site list. An optional, opt-in online lookup could come later.
+5. ✅ **UI:** a redesigned popup, tooltips that show the real destination, trusted domains, a warning before a dangerous link opens, an options page, a route for screen readers, and a welcome page.
 6. **Publish:** polish, privacy policy, and release on the Chrome Web Store.
+
+## Features
+
+- A coloured badge on risky links, with a tooltip that gives the reasons and the link's real destination.
+- A [warning before a dangerous link opens](#click-time-warning), with "Go back" and "Continue anyway".
+- A [popup](#toolbar-icon-and-popup) that says in one sentence how the page looks, lists its flagged links with every reason, and has the display settings.
+- [Trusted domains](#trusted-domains): tell Tripwire you know a site, without ever hiding a blocklist match.
+- Two downloaded [blocklists](#blocklists), checked on your device.
+- [Display modes](#display-modes) per site and overall, and an [options page](#options).
+- Works with the keyboard and with [screen readers](#screen-readers), in light and dark, at WCAG AA contrast.
+- [No link ever leaves your browser](#privacy).
+
+## Screenshots
+
+*To be added before the store release (step 6): the popup on a page with flagged links, a tooltip, the click-time warning, the options page.*
 
 ## What the badges mean
 
@@ -22,7 +37,9 @@ Tripwire is a Chrome extension that scans every link on a web page and marks the
 | Amber | `suspicious` | Something about the link is unusual. Check where it really goes. |
 | Red | `dangerous` | The link shows a pattern typical of phishing. |
 
-Hover a badge to see the reasons. Each check adds weighted points, and the total decides the level (30 or more is amber, 70 or more is red).
+Rest the pointer on a badge for its tooltip: the verdict, the reasons, and then "Goes to" with the link's whole host, the registrable domain (the part that says whose site it is) in bold. So `www.paypal.com.secure-login.example` is shown with `secure-login.example` in bold. The tooltip never covers the link it belongs to, and takes no clicks.
+
+Each check adds weighted points, and the total decides the level (30 or more is amber, 70 or more is red).
 
 The checks:
 
@@ -74,6 +91,80 @@ A list entry is either a whole host or one address on a host. A whole-host entry
 
 With `debug: true` (see [Performance](#performance)), ignored entries are logged in the service worker's console.
 
+## Click-time warning
+
+Clicking a red link does not open it straight away. Tripwire shows a warning over the page with:
+
+- the domain the link really goes to, in large monospace type (so `1` and `l`, or `rn` and `m`, can't pass for each other), and the full address under it with that domain in bold. The host is always shown whole; a long path is cut, with "Show full address" to see the rest;
+- every reason the link was flagged;
+- what continuing would do: open in this tab, in a new tab, in a new window, or download a file;
+- **Go back**, which has the keyboard focus, and **Continue anyway**. Escape and a click outside the box also go back.
+
+"Continue anyway" does what your click would have done: a plain click opens the link in the same tab, `target="_blank"`, Ctrl/Cmd-click and middle-click open a new tab, Shift-click opens a new window, and a `download` link downloads. Enter on a focused link is treated the same as a click.
+
+Only red links are stopped. Amber and green links, and links Tripwire has no verdict for, open as usual. Nothing is stopped on a site that is switched off, and the warning can be turned off altogether on the [options page](#options).
+
+**It must not break pages.** The click is only stopped once the warning is actually on screen. If anything goes wrong in Tripwire, or the warning can't be shown, the click goes through as if Tripwire weren't there.
+
+**New tabs and the popup blocker.** When "Continue anyway" needs a new tab or window, Tripwire's background worker opens it. Chrome's popup blocker applies to pages, not to that, so the tab always opens. The price is that the new page gets no referrer and no link back to the page that opened it. Same-tab links and downloads are followed by the browser itself, from a clean copy of the link.
+
+### How it is protected
+
+The warning is drawn inside the page, so a hostile page can try to interfere with it. What stands in the way:
+
+- **Only real input counts.** Every control in the warning acts only on events the browser marks as made by the user (`event.isTrusted`). Events made by a page script do nothing. The controls are also inside a closed shadow root, where a page can't reach them.
+- **Tampering can only cancel.** While the warning is open, Tripwire keeps checking that its element is still in the document, still where it was put, still in the browser's top layer, still visible, that a click on each button would land on that button, and (asking the browser, through IntersectionObserver v2) that nothing is drawn over "Continue anyway". If any check fails, the warning closes as "Go back". Nothing is put back or shown again, and the link is not followed.
+- **It is drawn above the page.** The warning uses the browser's top layer, above anything a page can stack with `z-index` and untouched by filters or opacity on the page. Its element's styles are set inline with `!important`, which no page stylesheet can override.
+- **No accidental continue.** "Continue anyway" ignores presses in the first half second, so the second half of a double-click can't land on it.
+- **What you approved is what opens.** The address is fixed when the warning opens. If the page changes the link afterwards, "Continue anyway" still goes to the address that was shown.
+- **Judged at the moment of the click.** A link is looked at again in the middle of the click, so a page that swaps a link's address just before the click lands is judged on where the click really goes.
+
+### Who sees the click first
+
+Tripwire registers its click and key listeners on `window`, in the capture phase, from a script that Chrome runs at `document_start`: before any of the page's own scripts. Listeners on the same target run in the order they were added, so Tripwire's run before every listener a page can add, and a stopped click never reaches the page's own handlers.
+
+A page can still get there first in these cases, all of which are also in [Limitations](#limitations):
+
+- it acts on an earlier event of the same press: `mousedown`, `pointerdown`, `touchstart` or `mouseup`;
+- it navigates from a script, a redirect or a form, which is not a link being followed;
+- another extension added its own listeners before Tripwire's.
+
+## Trusted domains
+
+If Tripwire flags a site you know, you can trust its domain: open the popup, open the flagged link with the arrow at its right, and choose **Trust this domain**. The page updates at once.
+
+- A link to a trusted domain is treated as green, with the note "You trusted this domain". What is trusted is the registrable domain (`example.com`, or `someone.github.io` on shared hosting), so its subdomains are covered and nothing else is.
+- **A blocklist match is never silently overridden.** A trusted link that is on a blocklist is shown in amber, with both facts stated: the blocklist match and "You trusted this domain". It is not stopped by the click-time warning, because it is no longer red, but it is never green.
+- Trusting a domain that has an address on a blocklist takes a second step: the popup explains what will happen and asks you to confirm.
+- The same rules apply to the page you are on, if it is the trusted domain.
+
+Trusted domains are listed on the options page, each with a "Remove" button. There is no "Trust" button in the tooltip: the tooltip takes no clicks, so that it can never get in the way of the page.
+
+## Options
+
+Open it from "Options" at the bottom of the popup, or from Tripwire's entry in `chrome://extensions`. Changes are saved as you make them.
+
+| Setting | What it does |
+| --- | --- |
+| **Badges on pages** | The default [display mode](#display-modes) for every site that has no setting of its own. |
+| **Warn me before I open a dangerous link** | Turns the [click-time warning](#click-time-warning) on or off. On by default. |
+| **Sites with their own setting** | Every site you gave its own display mode in the popup, with a "Remove" button that puts it back on the default. |
+| **Trusted domains** | Every domain you trusted, and when, with a "Remove" button. |
+
+## Welcome page
+
+The first time Tripwire is installed it opens a page that explains what it does, what the colours mean, the privacy promise and the display modes. It does not open on updates. The page is [src/welcome/welcome.html](src/welcome/welcome.html).
+
+## Screen readers
+
+The badges are drawn in an overlay that is hidden from assistive technology: they sit far from their links in the page's structure, so read aloud they would be noise. There are three other routes.
+
+- **On the link itself.** A red link gets an `aria-describedby` that points at a short description, for example "Tripwire warning: likely dangerous link. Domain imitates paypal.com with look-alike characters. Goes to www.paypa1.example." A screen reader says it when the link is reached. The description lives in one hidden element per document (`<tripwire-notes>`, `display: none`), because an id can't be referenced across a shadow boundary. The link's look, address, text and behaviour are not changed. Ids the page already put in `aria-describedby` are kept, in front of Tripwire's, and switching the site off removes everything again. Descriptions follow the badges: in "Only when I click" mode there are none until you ask for the badges.
+- **The click-time warning** is an alert dialog with a title and description, takes the focus when it opens, keeps Tab inside itself, and returns the focus to the link on "Go back".
+- **The popup** lists every flagged link with its reasons and can scroll to each one. All of its controls are labelled, keyboard reachable and show a focus ring; changes are announced.
+
+Colours meet WCAG AA in both light and dark. The values are in [src/lib/theme.js](src/lib/theme.js), and a test checks every text and control pairing.
+
 ## Privacy
 
 **The links on the pages you visit never leave your browser.** Tripwire has no server, and there is no online lookup.
@@ -88,7 +179,9 @@ What stays on your device:
 
 - the lists themselves, in the browser's IndexedDB storage;
 - every check. A page's links go from the page to Tripwire's own background worker, which looks them up in memory and answers. Nothing is logged or stored;
-- your settings. The display mode and per-site choices are kept in `chrome.storage.sync`, which Chrome itself syncs between your devices if you have Chrome sync turned on.
+- your settings. The display mode, per-site choices, trusted domains and the click-warning switch are kept in `chrome.storage.sync`, which Chrome itself syncs between your devices if you have Chrome sync turned on. Tripwire sends them nowhere.
+
+When you choose "Continue anyway" on a link that opens in a new tab, the page asks Tripwire's own background worker to open that one address. Like the blocklist lookups, that message goes no further than your browser.
 
 ## Limitations
 
@@ -99,6 +192,15 @@ What stays on your device:
 - **Suffix list.** Registrable domains come from a small bundled suffix list, not the full Public Suffix List.
 - **Near misses.** Near-miss matching will sometimes flag a real site whose name is one or two letters from a brand (amber, never red on its own).
 - **Places Tripwire doesn't look.** Closed shadow roots, frames inside a page, and editable areas are not scanned.
+- **The click-time warning covers link clicks only.** It stops a red link that you click, middle-click or open with Enter. It does not intercept:
+  - navigation started by a page's own scripts (including a script that reacts to `mousedown` or another event that comes before the click);
+  - redirects, whether from the server or from the page;
+  - form submissions;
+  - the browser's own ways of opening a link, which send the page no click: "Open link in new tab" in the context menu, dragging a link to the tab strip, or copying its address;
+  - links in places Tripwire doesn't scan (above), and links that are amber or green.
+- **A new tab opened through the warning** is opened by the extension, so the new page gets no referrer and no reference to the page that opened it. A link that would have been handled inside the page (a single-page app's own navigation) loads as a normal page instead.
+- **A warning the page interferes with closes.** That is deliberate: tampering can cancel a navigation but never cause one. It also means that on a page which covers or hides the warning, a red link won't open by clicking. The context menu still works, and the warning can be turned off in the options.
+- **Trust is by domain.** Trusting `example.com` covers every address and subdomain on it, apart from addresses that are on a blocklist.
 
 ## Display modes
 
@@ -108,12 +210,14 @@ Tripwire scans every page unless the site is switched off. The mode only decides
 | --- | --- |
 | **Risky only** (default) | Badges on amber and red links. Green links get nothing. |
 | **Show all** | A badge on every link, including green. |
-| **Only when I click** | Nothing, until you press "Show badges on this page" in the popup. |
-| **Off for this site** | Nothing is scanned or drawn on this site. |
+| **Only when I click** | Nothing, until you choose "Show all on this page" in the popup. |
+| **Off for this site** | Nothing is scanned or drawn on this site, and no link is stopped. |
 
-There is one global default (any mode except Off) and an optional override per site, both set from the popup. A site is a hostname, so `en.wikipedia.org` and `de.wikipedia.org` are separate. Changes apply immediately, without reloading the page.
+There is one global default (any mode except Off) and an optional override per site, both set from the popup. A site is a hostname, so `en.wikipedia.org` and `de.wikipedia.org` are separate. Changes apply immediately, without reloading the page. The [options page](#options) lists every site with an override.
 
-"Show badges on this page" is a one-off: it shows every badge until the page reloads or you pick a different mode.
+"Show all on this page" is a one-off: it shows every badge until the page reloads or you pick a different mode.
+
+The mode decides which badges are drawn, nothing more. The [click-time warning](#click-time-warning) works in every mode except Off.
 
 Settings are stored in `chrome.storage.sync`, so they follow your browser profile if sync is on.
 
@@ -123,13 +227,17 @@ The toolbar icon shows a count for the current tab: the number of red destinatio
 
 A destination is a distinct address and verdict, so a search result's title and its URL line count once. Hidden links count too, because a menu or dropdown can reveal them later. The count follows the page as links are added, changed and removed.
 
-The popup shows:
+The popup, from top to bottom:
 
-- the current site, and a warning if the page's own address is on a blocklist, or looks suspicious or dangerous;
-- how many links are being tracked, and how many distinct red and amber destinations there are. These update while the popup is open;
-- the mode for this site, the one-off "Show badges on this page" button, and the global default;
-- up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link;
-- the blocklists: each list's size, age and licence, any problem with the last update, and a "Check now" button.
+- **Header:** the logo, "Tripwire", and the current site.
+- **Page status:** one sentence, such as "3 risky links on this page" or "No risky links found on this page" (with "This is not a guarantee"; it never says "safe"). A warning about the page itself comes first and is the most prominent thing in the popup: a solid red block reading "This page is listed as phishing" or "This page looks dangerous".
+- **Flagged links:** blocklist matches first, then other red links, then amber. Each row shows the link's text, the domain it really goes to, and the top reason. Clicking a row scrolls to the link and outlines it; it does not open it. The arrow at the right opens the row to show every reason, the full address with the registrable domain in bold, and "Trust this domain". Three rows show at first, with "Show more" for the rest. The list updates while the popup is open.
+  - On a page that is itself listed or flagged, the links that have nothing against them except the page's warning are folded into one row, such as "9 links on this site share the page warning", which opens to list them. Links with reasons of their own keep their own rows.
+- **Badges on the page:** the mode for this site, the default for all other sites, and the one-off "Show all on this page".
+- **Blocklists:** closed while all is well, open when a list needs attention. Each list's size, age, source and licence, any problem with the last update, and "Check now".
+- **Footer:** the privacy promise and a link to the [options page](#options).
+
+The popup is 360px wide, never scrolls sideways, and in its usual states fits Chrome's 600px height; with a row opened it scrolls as one page.
 
 ## How badges are drawn
 
@@ -140,7 +248,11 @@ Tripwire adds no elements next to your links, so it can't shift a page's layout.
 - The overlay takes no pointer events anywhere, so it can never receive a click meant for the page. Tooltips are shown by watching where the pointer is.
 - When nearby links go to the same address with the same verdict, such as a search result's title and its URL line, they share one badge.
 
-The only thing Tripwire writes into the page itself is a `data-tripwire-processed` attribute on links it has given a verdict.
+What Tripwire writes into the page itself:
+
+- a `data-tripwire-processed` attribute on links it has given a verdict;
+- for red links, one id added to `aria-describedby`, and a hidden `<tripwire-notes>` element that holds the descriptions (see [Screen readers](#screen-readers));
+- while a click-time warning is open, the warning's own element.
 
 ## Pages that change
 
@@ -184,7 +296,7 @@ To see the badges, modes and placement in the browser, serve the demo page and o
 node demo/serve.js
 ```
 
-- <http://localhost:8080/> has a mix of green, amber and red links, plus placement tests (a sticky flex nav bar, a scrollable box, an image link, a wrapped link, hidden links, a fixed corner) and dynamic tests (inject 500 links, change a link's address, infinite scroll, single-page navigation, shadow roots).
+- <http://localhost:8080/> has a mix of green, amber and red links, plus placement tests (a sticky flex nav bar, a scrollable box, an image link, a wrapped link, hidden links, a fixed corner), dynamic tests (inject 500 links, change a link's address, infinite scroll, single-page navigation, shadow roots), a click-time warning section (same tab, new tab, download, a long address, a link that changes when pressed, a scripted click, a link inside the page's own dialog) and a trusted-domains section.
 - <http://paypa1.localhost:8080/> is the same page on a hostname that looks like a paypal lookalike (Chrome resolves any `.localhost` name to your own machine). Use it to see the page-verdict behavior.
 - <http://one.two.three.four.tripwire.localhost:8080/> is the same page on a hostname with many subdomains. Its single-page navigation buttons make the page's own verdict change without a reload.
 
@@ -204,7 +316,9 @@ The decision is `isDevelopmentInstall()` in [src/lib/blocklist.js](src/lib/block
 
 When the extension is packaged for the store (step 6), `test/` should be left out of the package as well, so the file is not there to load.
 
-The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
+The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it, except in the click-time warning section.
+
+[demo/popup-mockup.html](demo/popup-mockup.html) is the static design mockup the popup and the click-time warning were built from. It is not part of the extension.
 
 ## Icons
 
@@ -230,31 +344,48 @@ src/lib/settings.js        Display modes, storage keys, message names, toolbar c
 src/lib/bookkeeping.js     Pure helpers: distinct-destination counts, bounded verdict cache
 src/lib/blocklist.js       Blocklists: sources, URL normalization, parsing, matching, download checks
 src/lib/geometry.js        Pure helpers: badge and tooltip placement, grouping nearby links
-src/content/styles.js      CSS for the overlay, badges and tooltip
+src/lib/theme.js           The colours, light and dark, and the pairings that must meet WCAG AA
+src/lib/trust.js           Trusted domains: the rules (trusted, and trusted but blocklisted) and storage
+src/lib/findings.js        The popup's status sentence, row order and grouping; splitting an address
+src/lib/clickguard.js      The click-time warning's decisions: stop this click? what would it do? is the warning intact?
+src/content/early.js       Runs at document_start: the click and key listeners, ahead of the page's own
+src/content/styles.js      CSS for the overlay, badges, tooltip and click-time warning
+src/content/logo.js        The 48px icon as text, generated, for the warning to paint
 src/content/badge.js       Creates a badge; exposes setVerdict() and its tooltip
 src/content/overlay.js     The overlay: tracks links, positions badges, shows tooltips
+src/content/describer.js   Descriptions of red links for screen readers
+src/content/warning.js     Draws the click-time warning and guards it against the page
 src/content/scanner.js     Finds links, watches the page for changes, works through them in idle time
-src/content/content.js     Applies the mode, reports counts, answers the popup
+src/content/content.js     Applies the mode, reports counts, answers the popup, handles clicks on red links
 src/popup/                 Toolbar popup
-src/background/background.js  Service worker: sets the toolbar count for each tab
+src/options/               Options page
+src/welcome/               Welcome page, opened on first install
+src/ui/                    Stylesheets shared by the popup, options and welcome pages
+src/background/background.js  Service worker: toolbar count, welcome page, new tabs for "Continue anyway"
 src/background/lists.js    Downloads and stores the blocklists, answers lookups
-test/                      Tests for the analyzer, blocklists, settings, bookkeeping, geometry and the demo page
+test/                      Tests for every file in src/lib/, and for the demo page
 test/fixtures/             A made-up blocklist for tests and the demo page
-demo/                      Demo page and a tiny server for it
+demo/                      Demo page, a tiny server for it, and the design mockup
 ```
 
 Content scripts can't use ES module imports, so the files load in order through the manifest's `js` array and share one global, `Tripwire`. The files in `src/lib/` also set `module.exports` so Node can test them directly.
+
+There are two groups of content scripts. `early.js` runs at `document_start`, alone, so its listeners are in place before the page's scripts; everything else runs once the page has been parsed.
 
 ## Permissions
 
 | Permission | Why |
 | --- | --- |
-| `storage` | Saves the default display mode and per-site overrides in `chrome.storage.sync`, and the blocklists' status in `chrome.storage.local`. |
+| `storage` | Saves the default display mode, per-site overrides, trusted domains and the click-warning switch in `chrome.storage.sync`, and the blocklists' status in `chrome.storage.local`. |
 | `alarms` | Wakes the background worker every 6 hours to check for newer lists, and sooner to retry after a failed download. |
 | `https://malware-filter.gitlab.io/malware-filter/*` | Downloads the two blocklists from the project's main server (GitLab Pages). |
 | `https://curbengh.github.io/malware-filter/*` | The same files from the project's GitHub Pages mirror, used if the main server can't be reached. |
 | `https://malware-filter.pages.dev/*` | The same files from the project's Cloudflare Pages mirror, the last fallback. |
 
-The three host permissions cover only the folders the list files live in, and are used only to download those files. Tripwire does not ask for `tabs` or `activeTab`: the popup only needs the active tab's id, which is available without a permission, and it gets the site's hostname from the content script.
+The three host permissions cover only the folders the list files live in, and are used only to download those files. Tripwire does not ask for `tabs` or `activeTab`: the popup only needs the active tab's id, which is available without a permission, and it gets the site's hostname from the content script. Opening the welcome page, and a new tab for "Continue anyway", needs no permission either.
+
+Nothing in the extension is listed as a web-accessible resource, so a page can't load Tripwire's files (which is one way pages detect extensions). That is why the logo in the click-time warning is painted from text bundled with the script instead of being loaded as an image.
+
+Tripwire needs Chrome 114 or newer, for the top layer the click-time warning is drawn in.
 
 The content script runs on all `http`/`https` pages, so Chrome will say Tripwire can "read and change your data on all websites"; that's needed to scan links and draw badges.

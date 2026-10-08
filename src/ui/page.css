@@ -1,0 +1,190 @@
+/* Layout for Tripwire's full pages: options and welcome. Colours and shared
+   controls come from theme.css. */
+
+body {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.page-header {
+  background: var(--header-bg);
+  color: var(--header-text);
+}
+
+.page-header-inner,
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.page-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.page-header img {
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.page-header p {
+  color: var(--header-muted);
+  font-size: 14px;
+}
+
+/* On the dark header the ring has to be light in both themes. */
+.page-header :focus-visible {
+  outline-color: var(--header-text);
+}
+
+main {
+  padding-top: 8px;
+  padding-bottom: 56px;
+}
+
+section {
+  margin-top: 28px;
+}
+
+h2 {
+  margin-bottom: 6px;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+section > p + p {
+  margin-top: 8px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* A bordered list of things: settings rows, colour explanations. */
+.rows {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.rows > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+}
+
+.rows > li + li {
+  border-top: 1px solid var(--line);
+}
+
+/* Inside the list the ring is drawn inward, so the list's edge can't clip it. */
+.rows :focus-visible {
+  outline-offset: -2px;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-name {
+  display: block;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.row-note {
+  display: block;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.rows .dot {
+  width: 12px;
+  height: 12px;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.empty {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--control-border);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+/* Radio choices, each with a line of explanation. */
+.choices {
+  margin: 12px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.choices label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+}
+
+.choices label + label {
+  border-top: 1px solid var(--line);
+}
+
+.choices label:hover {
+  background: var(--surface);
+}
+
+.choices input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--text);
+}
+
+/* A promise worth setting apart. */
+.callout {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-left: 4px solid var(--ok-mark);
+  border-radius: 8px;
+  background: var(--ok-tint);
+}
+
+.callout p + p {
+  margin-top: 8px;
+}
+
+.page-footer {
+  margin-top: 36px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+@media (max-width: 480px) {
+  .rows > li {
+    flex-wrap: wrap;
+  }
+}

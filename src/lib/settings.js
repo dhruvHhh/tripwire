@@ -16,6 +16,14 @@
     off: 'Off for this site',
   };
 
+  // One line each, for the options page.
+  const MODE_DESCRIPTIONS = {
+    risky: 'A badge on suspicious and dangerous links only.',
+    all: 'A badge on every link, including the ones with no red flags.',
+    click: 'No badges until you choose "Show all on this page" in the popup. The toolbar icon still counts risky links.',
+    off: 'Nothing is checked on that site.',
+  };
+
   const DEFAULT_MODE = 'risky';
   // "off" is a per-site choice, so it can't be the global default.
   const DEFAULT_MODE_CHOICES = ['risky', 'all', 'click'];
@@ -24,6 +32,9 @@
   // an override. Separate keys keep each item far below the per-item quota.
   const DEFAULT_MODE_KEY = 'defaultMode';
   const SITE_KEY_PREFIX = 'site:';
+  // Whether clicking a dangerous link shows a warning first. On unless the
+  // user has turned it off on the options page.
+  const CLICK_WARNING_KEY = 'clickWarning';
 
   const MESSAGES = {
     GET_STATE: 'tripwire:get-state', // popup -> content: what did you find?
@@ -33,6 +44,7 @@
     COUNTS: 'tripwire:counts', // content -> service worker: toolbar numbers
     LOOKUP: 'tripwire:lookup', // content -> service worker: are these links on a blocklist?
     UPDATE_LISTS: 'tripwire:update-lists', // popup -> service worker: "Check now"
+    OPEN_LINK: 'tripwire:open-link', // content -> service worker: open this link in a new tab
   };
 
   // Where the service worker keeps the blocklists' status, in
@@ -68,7 +80,7 @@
   }
 
   // Whether a link at `level` gets a badge. `revealed` is the popup's one-off
-  // "Show badges on this page", which lasts until the page reloads.
+  // "Show all on this page", which lasts until the page reloads.
   function shouldDisplay(level, mode, revealed = false) {
     if (mode === 'off') return false;
     if (revealed || mode === 'all') return true;
@@ -91,10 +103,22 @@
     return { text, ...TOOLBAR_COLORS[level] };
   }
 
+  // Anything but an explicit "off" means on: a missing or damaged value must
+  // not quietly switch the warning off.
+  function resolveClickWarning(value) {
+    return value !== false;
+  }
+
   async function load(hostname) {
     const key = siteKey(hostname);
-    const stored = await chrome.storage.sync.get([DEFAULT_MODE_KEY, key]);
-    return { defaultMode: stored[DEFAULT_MODE_KEY], siteMode: stored[key] };
+    const stored = await chrome.storage.sync.get([DEFAULT_MODE_KEY, CLICK_WARNING_KEY, key]);
+    return { defaultMode: stored[DEFAULT_MODE_KEY], siteMode: stored[key], clickWarning: stored[CLICK_WARNING_KEY] };
+  }
+
+  function saveClickWarning(enabled) {
+    return enabled === false
+      ? chrome.storage.sync.set({ [CLICK_WARNING_KEY]: false })
+      : chrome.storage.sync.remove(CLICK_WARNING_KEY);
   }
 
   async function loadDefaultMode() {
@@ -112,11 +136,31 @@
     return isMode(mode) ? chrome.storage.sync.set({ [key]: mode }) : chrome.storage.sync.remove(key);
   }
 
+  // The sites with a mode of their own in a dump of chrome.storage.sync, by
+  // name. For the options page.
+  function listSiteModes(stored) {
+    return Object.entries(stored || {})
+      .filter(([key, mode]) => key.startsWith(SITE_KEY_PREFIX) && key.length > SITE_KEY_PREFIX.length && isMode(mode))
+      .map(([key, mode]) => ({ hostname: key.slice(SITE_KEY_PREFIX.length), mode }))
+      .sort((a, b) => a.hostname.localeCompare(b.hostname));
+  }
+
+  // Whether chrome.runtime.onInstalled is reporting a first install, the only
+  // time the welcome page opens. Updates and browser updates are not.
+  function isFirstInstall(details) {
+    return Boolean(details) && details.reason === 'install';
+  }
+
+  const WELCOME_PAGE = 'src/welcome/welcome.html';
+
   const api = {
     MODES,
+    MODE_DESCRIPTIONS,
     DEFAULT_MODE,
     DEFAULT_MODE_CHOICES,
     DEFAULT_MODE_KEY,
+    SITE_KEY_PREFIX,
+    CLICK_WARNING_KEY,
     MESSAGES,
     LIST_STATUS_KEY,
     POPUP_PORT,
@@ -130,6 +174,11 @@
     loadDefaultMode,
     saveDefaultMode,
     saveSiteMode,
+    resolveClickWarning,
+    saveClickWarning,
+    listSiteModes,
+    isFirstInstall,
+    WELCOME_PAGE,
   };
 
   globalThis.Tripwire = globalThis.Tripwire || {};

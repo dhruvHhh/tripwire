@@ -100,3 +100,44 @@ test('siteKey is per hostname and case-insensitive', () => {
   assert.equal(siteKey('Example.COM'), 'site:example.com');
   assert.notEqual(siteKey('a.example.com'), siteKey('b.example.com'));
 });
+
+const { listSiteModes, isFirstInstall, MODE_DESCRIPTIONS, WELCOME_PAGE } = require('../src/lib/settings.js');
+
+test('listSiteModes: reads site settings out of a storage dump, by name', () => {
+  const stored = {
+    defaultMode: 'all',
+    'site:zebra.example': 'off',
+    'site:apple.example': 'click',
+    'site:broken.example': 'nonsense',
+    'site:': 'all',
+    'trust:apple.example': { addedAt: 1 },
+  };
+  assert.deepEqual(listSiteModes(stored), [
+    { hostname: 'apple.example', mode: 'click' },
+    { hostname: 'zebra.example', mode: 'off' },
+  ]);
+  assert.deepEqual(listSiteModes({}), []);
+  assert.deepEqual(listSiteModes(undefined), []);
+});
+
+test('isFirstInstall: the welcome page opens on a first install only', () => {
+  const cases = [
+    [{ reason: 'install' }, true],
+    [{ reason: 'update', previousVersion: '0.5.1' }, false],
+    [{ reason: 'chrome_update' }, false],
+    [{ reason: 'shared_module_update' }, false],
+    [{}, false],
+    [undefined, false],
+    [null, false],
+  ];
+  for (const [details, expected] of cases) {
+    assert.equal(isFirstInstall(details), expected, JSON.stringify(details));
+  }
+});
+
+test('every mode has a description, and the welcome page exists', () => {
+  assert.deepEqual(Object.keys(MODE_DESCRIPTIONS).sort(), Object.keys(MODES).sort());
+  const fs = require('node:fs');
+  const path = require('node:path');
+  assert.ok(fs.existsSync(path.join(__dirname, '..', WELCOME_PAGE)));
+});

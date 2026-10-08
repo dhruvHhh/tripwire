@@ -17,12 +17,16 @@
     analyzeLink,
     analyzePage,
     createOverlay,
+    createDescriber,
     createTally,
     createBoundedCache,
     sameVerdict,
     OVERLAY_TAG,
+    NOTES_TAG,
+    WARNING_ATTR,
   } = Tripwire;
-  const { applyListing } = Tripwire.blocklist;
+  const { resolveVerdict, domainOf } = Tripwire.trust;
+  const { inheritsOnly, buildRows } = Tripwire.findings;
 
   const LINK_SELECTOR = 'a[href]';
   const PROCESSED_ATTR = 'data-tripwire-processed';
@@ -51,8 +55,14 @@
   // for a shadow root as the page keeps changing.
   const MAX_UNDEFINED_HOSTS = 500;
 
-  const MAX_FLAGGED_LINKS = 10;
+  // What the popup is sent: at most this many rows, and this many links in a
+  // group row. An address longer than the limit (a data: link, say) is cut.
+  const MAX_ROWS = 50;
+  const MAX_GROUP_MEMBERS = 50;
   const MAX_LISTED_TEXT_LENGTH = 80;
+  const MAX_LISTED_URL_LENGTH = 2000;
+  // How many reasons a screen reader is read for a dangerous link.
+  const MAX_DESCRIBED_REASONS = 3;
 
   const OBSERVE_OPTIONS = {
     subtree: true,
@@ -111,6 +121,14 @@
     }
   }
 
+  // What a screen reader says about a dangerous link (see describer.js).
+  function descriptionOf(verdict, url) {
+    const parts = ['Tripwire warning: likely dangerous link', ...verdict.reasons.slice(0, MAX_DESCRIBED_REASONS)];
+    const host = destinationOf(url);
+    if (host) parts.push(`Goes to ${host}`);
+    return `${parts.map((part) => part.replace(/[.\s]+$/, '')).join('. ')}.`;
+  }
+
   /**
    * Starts scanning. `onChange` is called after any stretch of work that
    * changed the counts, the flagged links or the page verdict.
@@ -118,25 +136,38 @@
    * `lookup(urls)` asks the service worker which addresses are on a
    * blocklist. It resolves to { ready, results }, with one match or null per
    * address, or to null if the worker can't be reached.
+   *
+   * `trusted` is the user's trusted domains; setTrusted() replaces them.
    */
-  function createScanner({ onChange, lookup }) {
+  function createScanner({ onChange, lookup, trusted = [] }) {
     const overlay = createOverlay();
+    const describer = createDescriber();
     const tally = createTally();
-    // Verdicts keyed by href AND link text: the text/href mismatch check means
-    // two links to the same URL can deserve different verdicts.
+    // What the checks say about a link, keyed by href AND link text: the
+    // text/href mismatch check means two links to the same URL can deserve
+    // different verdicts.
     const verdicts = createBoundedCache(VERDICT_CACHE_SIZE);
+
+    let trustedDomains = new Set(trusted);
+    const isTrusted = (url) => trustedDomains.size > 0 && trustedDomains.has(domainOf(url));
+    // Dangerous links are described to screen readers whenever their badges
+    // are drawn; setDisplayFilter() decides.
+    let describeDangerous = false;
 
     let pageUrl = location.href;
     // The page's own address is judged once per URL; every same-site link
-    // depends on it. `pageVerdict` is what the checks on the address say,
-    // overridden to dangerous if the address is on a blocklist.
+    // depends on it. `pageVerdict` is what is shown for the page: what the
+    // checks on the address say, then any blocklist match, then the user's
+    // trust (trust.resolveVerdict has the rules).
     let pageHeuristics = analyzePage(pageUrl);
     let pageListing = null;
-    let pageVerdict = pageHeuristics;
+    let pageTrusted = isTrusted(pageUrl);
+    let pageVerdict = resolveVerdict({ verdict: pageHeuristics, trusted: pageTrusted });
 
     // One record per link that has a verdict:
-    // { id, link, text, url, verdict, listing, item }. `verdict` is what is
-    // shown: the heuristics' verdict, overridden if the address is listed.
+    // { id, link, text, url, verdict, listing, trusted, inherited, item }.
+    // `verdict` is what is shown, resolved the same way as the page's.
+    // `inherited` means the link has nothing against it but the page's warning.
     const records = new Set();
     const recordByLink = new WeakMap();
     const recordById = new Map();
@@ -208,8 +239,14 @@
       unindexByUrl(record);
       tally.remove(record.url, record.verdict.level);
       overlay.remove(record.item);
+      describer.describe(record.link, null);
       if (record.link.isConnected) record.link.removeAttribute(PROCESSED_ATTR);
       changed = true;
+    }
+
+    function syncDescription(record) {
+      const wanted = describeDangerous && record.verdict.level === 'dangerous';
+      describer.describe(record.link, wanted ? descriptionOf(record.verdict, record.url) : null);
     }
 
     // Gives a link its verdict, or brings an existing one up to date. Safe to
@@ -223,10 +260,10 @@
       }
 
       const cacheKey = `${info.href}\n${info.text}`;
-      let verdict = verdicts.get(cacheKey);
-      if (!verdict) {
-        verdict = analyzeLink({ href: info.href, text: info.text, pageUrl, pageVerdict });
-        verdicts.set(cacheKey, verdict);
+      let heuristics = verdicts.get(cacheKey);
+      if (!heuristics) {
+        heuristics = analyzeLink({ href: info.href, text: info.text, pageUrl, pageVerdict });
+        verdicts.set(cacheKey, heuristics);
         stats.analyserRuns++;
       }
       stats.linksAnalysed++;
@@ -241,17 +278,22 @@
           if (listsReady) pendingLookups.add(info.url);
         }
       }
-      if (listing) verdict = applyListing(verdict, listing, Date.now());
+
+      const trusted = isTrusted(info.url);
+      const verdict = resolveVerdict({ verdict: heuristics, listing, trusted, now: Date.now() });
+      const inherited = inheritsOnly({ reasons: heuristics.reasons, listing, pageListing });
 
       const display = {
         level: verdict.level,
         reasons: verdict.reasons,
+        url: info.url,
+        trusted,
         // Links with the same destination and verdict can share a badge.
         key: `${info.url}\n${verdict.level}`,
       };
 
       if (!record) {
-        record = { id: nextId++, link, text: info.text, url: info.url, verdict, listing, item: null };
+        record = { id: nextId++, link, text: info.text, url: info.url, verdict, listing, trusted, inherited, item: null };
         record.item = overlay.add(link, display);
         records.add(record);
         recordByLink.set(link, record);
@@ -259,13 +301,21 @@
         indexByUrl(record);
         tally.add(record.url, verdict.level);
         link.setAttribute(PROCESSED_ATTR, '');
+        syncDescription(record);
         changed = true;
         return;
       }
 
       const same =
-        record.url === info.url && record.text === info.text && sameVerdict(record.verdict, verdict);
-      if (same) return;
+        record.url === info.url &&
+        record.text === info.text &&
+        record.trusted === trusted &&
+        record.inherited === inherited &&
+        sameVerdict(record.verdict, verdict);
+      if (same) {
+        syncDescription(record); // The page may have moved the link or rewritten its attributes.
+        return;
+      }
 
       tally.remove(record.url, record.verdict.level);
       if (record.url !== info.url) {
@@ -276,8 +326,11 @@
       record.text = info.text;
       record.verdict = verdict;
       record.listing = listing;
+      record.trusted = trusted;
+      record.inherited = inherited;
       tally.add(record.url, verdict.level);
       overlay.update(record.item, display);
+      syncDescription(record);
       changed = true;
     }
 
@@ -340,7 +393,15 @@
     // Works out the page's verdict again. If it changed, every link is looked
     // at again, because same-site links inherit from it.
     function refreshPageVerdict() {
-      const verdict = pageListing ? applyListing(pageHeuristics, pageListing, Date.now()) : pageHeuristics;
+      const wasTrusted = pageTrusted;
+      pageTrusted = isTrusted(pageUrl);
+      if (pageTrusted !== wasTrusted) changed = true;
+      const verdict = resolveVerdict({
+        verdict: pageHeuristics,
+        listing: pageListing,
+        trusted: pageTrusted,
+        now: Date.now(),
+      });
       if (sameVerdict(verdict, pageVerdict)) return;
       pageVerdict = verdict;
       verdicts.clear();
@@ -520,6 +581,8 @@
       let layoutMayHaveChanged = false;
       for (const mutation of mutations) {
         const { target } = mutation;
+        // Our own notes for screen readers (describer.js): nothing to scan.
+        if (target.localName === NOTES_TAG) continue;
 
         if (mutation.type === 'characterData') {
           const parent = target.parentElement;
@@ -540,7 +603,12 @@
 
         if (mutation.removedNodes.length > 0) needsPrune = true;
         for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE && node.localName !== OVERLAY_TAG) {
+          if (
+            node.nodeType === Node.ELEMENT_NODE &&
+            node.localName !== OVERLAY_TAG &&
+            node.localName !== NOTES_TAG &&
+            !node.hasAttribute(WARNING_ATTR)
+          ) {
             pendingSubtrees.push(node);
           }
         }
@@ -583,39 +651,63 @@
 
     // --- Public API -------------------------------------------------------------
 
-    // Red first, then amber; one entry per destination and level.
-    function flaggedLinks() {
-      const seen = new Set();
-      const flagged = [];
-      for (const level of ['dangerous', 'suspicious']) {
-        for (const record of records) {
-          if (flagged.length >= MAX_FLAGGED_LINKS) return flagged;
-          if (record.verdict.level !== level) continue;
-          const key = `${record.url}\n${level}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          flagged.push({
-            id: record.id,
-            level,
-            text: (record.text || nameOfTextless(record.link)).slice(0, MAX_LISTED_TEXT_LENGTH),
-            destination: destinationOf(record.url),
-            reason: record.verdict.reasons[0] || '',
-          });
-        }
+    // Every link that isn't "ok", as findings.buildRows() wants them. It
+    // sorts, groups and removes repeats.
+    function* flaggedLinks() {
+      for (const record of records) {
+        if (record.verdict.level === 'ok') continue;
+        yield {
+          id: record.id,
+          level: record.verdict.level,
+          text: (record.text || nameOfTextless(record.link)).slice(0, MAX_LISTED_TEXT_LENGTH),
+          url: record.url.slice(0, MAX_LISTED_URL_LENGTH),
+          reasons: record.verdict.reasons,
+          listed: Boolean(record.listing),
+          trusted: record.trusted,
+          inherited: record.inherited,
+        };
       }
-      return flagged;
+    }
+
+    // Domains with an address on a blocklist on this page, the page's own
+    // included. Trusting one of them takes a confirmation in the popup.
+    function listedDomains() {
+      const domains = new Set();
+      if (pageListing) domains.add(domainOf(pageUrl));
+      for (const record of records) {
+        if (record.listing) domains.add(domainOf(record.url));
+      }
+      domains.delete('');
+      return [...domains];
     }
 
     function getCounts() {
       return tally.summary();
     }
 
+    // For the toolbar icon. A listed page the user trusts is amber, like its
+    // links, so it doesn't count here.
     function isPageListed() {
-      return pageListing !== null;
+      return pageListing !== null && !pageTrusted;
     }
 
     function getSnapshot() {
-      return { pageVerdict, pageListing, counts: tally.summary(), flagged: flaggedLinks() };
+      const pageDomain = domainOf(pageUrl);
+      const { rows, hidden } = buildRows(flaggedLinks(), {
+        pageDomain,
+        maxRows: MAX_ROWS,
+        maxMembers: MAX_GROUP_MEMBERS,
+      });
+      return {
+        pageVerdict,
+        pageListing,
+        pageTrusted,
+        pageDomain,
+        counts: tally.summary(),
+        rows,
+        hiddenRows: hidden,
+        listedDomains: listedDomains(),
+      };
     }
 
     function getStats() {
@@ -645,9 +737,48 @@
       return true;
     }
 
-    // `wantsBadge(level)` decides which verdict levels are drawn.
+    /**
+     * The link's verdict at this moment, for the click-time warning, or null
+     * if it has none.
+     *
+     * The link is looked at again first, in the middle of the click. A page
+     * can swap a link's address just before the click lands (on mousedown,
+     * say); this way it is judged on where the click will really go. It also
+     * covers a link the queue hasn't reached yet. Only the checks that need
+     * no waiting run here: a blocklist answer that isn't known yet stays
+     * unknown.
+     */
+    function verdictAt(link) {
+      if (stopped) return null;
+      pendingLinks.delete(link);
+      processLink(link);
+      flushLookups();
+      flushChanges();
+      const record = recordByLink.get(link);
+      if (!record) return null;
+      return {
+        level: record.verdict.level,
+        reasons: record.verdict.reasons,
+        url: record.url,
+        listing: record.listing,
+      };
+    }
+
+    // `wantsBadge(level)` decides which verdict levels are drawn. Dangerous
+    // links are described to screen readers exactly when they get a badge.
     function setDisplayFilter(wantsBadge) {
       overlay.setFilter((item) => wantsBadge(item.level));
+      describeDangerous = Boolean(wantsBadge('dangerous'));
+      for (const record of records) syncDescription(record);
+    }
+
+    // The user's trusted domains changed: every link is looked at again.
+    function setTrusted(domains) {
+      trustedDomains = new Set(domains);
+      refreshPageVerdict();
+      for (const record of records) pendingLinks.add(record.link);
+      scheduleWork();
+      flushChanges();
     }
 
     function stop() {
@@ -659,6 +790,7 @@
       window.removeEventListener('hashchange', checkPageUrl);
       overlay.destroy();
       for (const record of records) {
+        describer.describe(record.link, null);
         if (record.link.isConnected) record.link.removeAttribute(PROCESSED_ATTR);
       }
       records.clear();
@@ -672,7 +804,18 @@
       pendingHostWalks.length = 0;
     }
 
-    return { getCounts, isPageListed, getSnapshot, getStats, focusLink, setDisplayFilter, recheckListings, stop };
+    return {
+      getCounts,
+      isPageListed,
+      getSnapshot,
+      getStats,
+      focusLink,
+      verdictAt,
+      setDisplayFilter,
+      setTrusted,
+      recheckListings,
+      stop,
+    };
   }
 
   Tripwire.createScanner = createScanner;

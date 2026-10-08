@@ -20,6 +20,9 @@ build/
 # Extension signing keys: never commit these
 *.pem
 
+# Contact sheet from tools/make-icons.js --preview
+icon-preview.png
+
 # Env / logs
 .env
 *.log

@@ -129,11 +129,25 @@ node demo/serve.js
 
 The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
 
+## Icons
+
+The icons in `icons/` are generated from `logo.png`:
+
+```
+node tools/make-icons.js
+```
+
+Add `--preview` to also write `icon-preview.png`, a contact sheet of every size at actual size and enlarged, on light and dark backgrounds. The script needs only Node, and is not part of the extension.
+
+The icons are not plain downscales. The logo's chain links are white with a hairline outline, which would vanish on a light toolbar, so each size redraws the outline at a visible width. The 16 and 32 px icons go further for legibility: the warning triangle is enlarged, the spark marks are dropped, the "!" is placed on whole pixels, and at 16 px the links are solid grey. The 128 px icon keeps its artwork inside the middle 96x96, as the Chrome Web Store asks.
+
 ## Project structure
 
 ```
 manifest.json              Extension manifest (MV3)
-icons/                     Toolbar / store icons (placeholders)
+icons/                     Toolbar and store icons, generated from logo.png
+logo.png                   Source artwork for the icons
+tools/make-icons.js        Regenerates icons/ from logo.png (development only)
 src/lib/analyzer.js        analyzeLink() and analyzePage(): pure, offline scoring and its config
 src/lib/settings.js        Display modes, storage keys, message names, toolbar count
 src/lib/bookkeeping.js     Pure helpers: distinct-destination counts, bounded verdict cache

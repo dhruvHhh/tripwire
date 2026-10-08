@@ -128,8 +128,11 @@
 
     let pageUrl = location.href;
     // The page's own address is judged once per URL; every same-site link
-    // depends on it.
-    let pageVerdict = analyzePage(pageUrl);
+    // depends on it. `pageVerdict` is what the checks on the address say,
+    // overridden to dangerous if the address is on a blocklist.
+    let pageHeuristics = analyzePage(pageUrl);
+    let pageListing = null;
+    let pageVerdict = pageHeuristics;
 
     // One record per link that has a verdict:
     // { id, link, text, url, verdict, listing, item }. `verdict` is what is
@@ -334,10 +337,40 @@
         });
     }
 
+    // Works out the page's verdict again. If it changed, every link is looked
+    // at again, because same-site links inherit from it.
+    function refreshPageVerdict() {
+      const verdict = pageListing ? applyListing(pageHeuristics, pageListing, Date.now()) : pageHeuristics;
+      if (sameVerdict(verdict, pageVerdict)) return;
+      pageVerdict = verdict;
+      verdicts.clear();
+      for (const record of records) pendingLinks.add(record.link);
+      changed = true;
+      scheduleWork();
+    }
+
+    // Asks whether the page's own address is on a blocklist. Until the answer
+    // for a new address arrives, the previous answer stands.
+    function lookupPage() {
+      if (!lookup || stopped || !LOOKUPABLE_RE.test(pageUrl)) return;
+      const asked = pageUrl;
+      Promise.resolve(lookup([asked]))
+        .catch(() => null)
+        .then((reply) => {
+          if (stopped || asked !== pageUrl || !reply || !reply.ready) return;
+          const listing = reply.results[0] || null;
+          if (Boolean(listing) !== Boolean(pageListing)) changed = true;
+          pageListing = listing;
+          refreshPageVerdict();
+          flushChanges();
+        });
+    }
+
     // The lists changed (first download, an update, "Check now"): forget the
-    // answers and ask again for every address on the page.
+    // answers and ask again for the page and every address on it.
     function recheckListings() {
       if (!lookup || stopped) return;
+      lookupPage();
       listings.clear();
       listsReady = true;
       for (const url of recordsByUrl.keys()) {
@@ -530,14 +563,9 @@
     function checkPageUrl() {
       if (location.href === pageUrl) return;
       pageUrl = location.href;
-      const verdict = analyzePage(pageUrl);
-      if (sameVerdict(verdict, pageVerdict)) return;
-
-      pageVerdict = verdict;
-      verdicts.clear();
-      for (const record of records) pendingLinks.add(record.link);
-      changed = true;
-      scheduleWork();
+      pageHeuristics = analyzePage(pageUrl);
+      refreshPageVerdict();
+      lookupPage();
       flushChanges();
     }
 
@@ -551,6 +579,7 @@
     observer.observe(document, OBSERVE_OPTIONS);
     pendingSubtrees.push(document);
     scheduleWork();
+    lookupPage();
 
     // --- Public API -------------------------------------------------------------
 
@@ -581,8 +610,12 @@
       return tally.summary();
     }
 
+    function isPageListed() {
+      return pageListing !== null;
+    }
+
     function getSnapshot() {
-      return { pageVerdict, counts: tally.summary(), flagged: flaggedLinks() };
+      return { pageVerdict, pageListing, counts: tally.summary(), flagged: flaggedLinks() };
     }
 
     function getStats() {
@@ -639,7 +672,7 @@
       pendingHostWalks.length = 0;
     }
 
-    return { getCounts, getSnapshot, getStats, focusLink, setDisplayFilter, recheckListings, stop };
+    return { getCounts, isPageListed, getSnapshot, getStats, focusLink, setDisplayFilter, recheckListings, stop };
   }
 
   Tripwire.createScanner = createScanner;

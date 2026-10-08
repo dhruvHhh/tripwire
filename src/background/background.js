@@ -22,6 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   const { text, color, textColor } = toolbarBadge({
     dangerous: Number(message.dangerous) || 0,
     suspicious: Number(message.suspicious) || 0,
+    pageListed: message.pageListed === true,
   });
 
   // The tab can close before these land; that's not an error worth reporting.

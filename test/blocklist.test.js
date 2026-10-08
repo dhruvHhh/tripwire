@@ -22,6 +22,8 @@ const {
   formatAge,
   listingReason,
   applyListing,
+  describePageListing,
+  isDevelopmentInstall,
   describeSource,
   describeAll,
 } = require('../src/lib/blocklist.js');
@@ -408,13 +410,13 @@ test('fixture list: parses, and its "must be ignored" entries are ignored', () =
   const screened = screenEntries(parsed);
   assert.equal(parsed.title, 'Tripwire test list');
   assert.deepEqual(screened.hosts, ['blocklisted-phish.example', 'malware-drop.test', '203.0.113.77']);
-  assert.equal(screened.urls.length, 5);
+  assert.equal(screened.urls.length, 6);
   assert.deepEqual(
     screened.ignored.map((entry) => entry.host),
     ['github.com', 'sites.google.com', 'docs.google.com', 'github.io', 'bit.ly', 'gov.in', 'list-manage.com', 'co.uk', '192.168.1.1'],
   );
   assert.equal(parsed.rejected, 1, 'the wildcard entry');
-  assert.deepEqual(checkDownload({ source: CONFIG.fixture, bytes: FIXTURE.length, parsed, entries: 8 }), { ok: true });
+  assert.deepEqual(checkDownload({ source: CONFIG.fixture, bytes: FIXTURE.length, parsed, entries: 9 }), { ok: true });
 });
 
 // --- Judging a download ----------------------------------------------------------
@@ -711,4 +713,103 @@ test('describeAll: one line for every list together', () => {
   assert.equal(describeAll([fresh, undefined], NOW).tone, 'warn');
   assert.deepEqual(describeAll([undefined, undefined], NOW), { tone: 'pending', text: 'not downloaded yet' });
   assert.equal(describeAll([{ entries: 0, error: 'timed out' }, undefined], NOW).tone, 'error');
+});
+
+// --- A page that is itself listed ------------------------------------------------
+
+const { analyzeLink, analyzePage } = require('../src/lib/analyzer.js');
+
+test('describePageListing: names the category and the list', () => {
+  const description = describePageListing(LISTING, NOW);
+  assert.equal(description.title, 'This page is listed as phishing by Phishing URL Blocklist');
+  assert.match(description.detail, /updated 3 hours ago/);
+
+  const malware = describePageListing({ ...LISTING, category: 'malware', name: 'Online Malicious URL Blocklist' }, NOW);
+  assert.equal(malware.title, 'This page is listed as malware by Online Malicious URL Blocklist');
+});
+
+// What the scanner does when the page's own address is listed: the page's
+// verdict becomes the listing, and links are analysed against that.
+const LISTED_PAGE = 'https://evil.example/portal/index.html';
+const listedPageVerdict = applyListing(analyzePage(LISTED_PAGE), LISTING, NOW);
+
+test('listed page: the page verdict is dangerous even if its address looks ordinary', () => {
+  assert.equal(analyzePage(LISTED_PAGE).level, 'ok');
+  assert.equal(listedPageVerdict.level, 'dangerous');
+  assert.match(listedPageVerdict.reasons[0], /^Listed as phishing by Phishing URL Blocklist/);
+});
+
+const LISTED_PAGE_LINKS = [
+  // [href, text, expected level, why]
+  ['/login', 'Log in', 'dangerous', 'relative link'],
+  ['https://evil.example/account', 'Account', 'dangerous', 'absolute link to the same host'],
+  ['https://cdn.evil.example/download.zip', 'Download', 'dangerous', 'a subdomain of the same site'],
+  ['https://en.wikipedia.org/wiki/Phishing', 'Read more', 'ok', 'a link that leaves the site'],
+  ['https://www.example.org/', 'example.org', 'ok', 'another site named honestly'],
+];
+
+for (const [href, text, level, why] of LISTED_PAGE_LINKS) {
+  test(`listed page: ${why} is ${level}`, () => {
+    const result = analyzeLink({ href, text, pageUrl: LISTED_PAGE, pageVerdict: listedPageVerdict });
+    assert.equal(result.level, level, JSON.stringify(result.reasons));
+    if (level === 'dangerous') {
+      assert.match(result.reasons[0], /^This page itself looks dangerous: listed as phishing by Phishing URL Blocklist/);
+    }
+  });
+}
+
+test('listed page: without the listing, the same links are fine', () => {
+  for (const [href, text] of LISTED_PAGE_LINKS) {
+    assert.equal(analyzeLink({ href, text, pageUrl: LISTED_PAGE }).level, 'ok', href);
+  }
+});
+
+test('listed page: a page on a protected host is matched only by its own address', () => {
+  const pageMatch = matcherFor(MATCH_LIST);
+  assert.equal(pageMatch('https://sites.google.com/view/fake-bank/home').kind, 'url');
+  assert.equal(pageMatch('https://sites.google.com/view/my-school'), null);
+  assert.equal(pageMatch('https://github.com/nodejs/node'), null);
+});
+
+// --- Who gets the bundled test list ------------------------------------------------
+
+const STORE_MANIFEST = { name: 'Tripwire', version: '0.5.1', update_url: 'https://clients2.google.com/service/update2/crx' };
+const SOURCE_MANIFEST = { name: 'Tripwire', version: '0.5.1' };
+
+const INSTALL_CASES = [
+  // [what, facts, expected]
+  ['unpacked in developer mode', { manifest: SOURCE_MANIFEST, self: { installType: 'development' } }, true],
+
+  ['installed from the Web Store', { manifest: STORE_MANIFEST, self: { installType: 'normal' } }, false],
+  ['installed by enterprise policy', { manifest: STORE_MANIFEST, self: { installType: 'admin' } }, false],
+  ['sideloaded by other software', { manifest: SOURCE_MANIFEST, self: { installType: 'sideload' } }, false],
+  ['installed some other way', { manifest: SOURCE_MANIFEST, self: { installType: 'other' } }, false],
+  ['a normal install whose manifest has no update_url', { manifest: SOURCE_MANIFEST, self: { installType: 'normal' } }, false],
+
+  // Contradictory or missing facts: not a development install.
+  ['"development" but with a store update_url', { manifest: STORE_MANIFEST, self: { installType: 'development' } }, false],
+  ['"development" with an empty update_url', { manifest: { ...SOURCE_MANIFEST, update_url: '' }, self: { installType: 'development' } }, false],
+  ['Chrome gave no answer', { manifest: SOURCE_MANIFEST, self: null }, false],
+  ['Chrome gave an answer without an install type', { manifest: SOURCE_MANIFEST, self: {} }, false],
+  ['an install type this code has never heard of', { manifest: SOURCE_MANIFEST, self: { installType: 'unpacked' } }, false],
+  ['install type in the wrong case', { manifest: SOURCE_MANIFEST, self: { installType: 'Development' } }, false],
+  ['no manifest', { manifest: null, self: { installType: 'development' } }, false],
+  ['a manifest that is not an object', { manifest: 'manifest.json', self: { installType: 'development' } }, false],
+  ['nothing known at all', {}, false],
+];
+
+for (const [what, facts, expected] of INSTALL_CASES) {
+  test(`test list: ${expected ? 'loaded' : 'NOT loaded'} when ${what}`, () => {
+    assert.equal(isDevelopmentInstall(facts), expected);
+  });
+}
+
+test('test list: called with nothing, the answer is no', () => {
+  assert.equal(isDevelopmentInstall(), false);
+});
+
+test('test list: it is not one of the real sources', () => {
+  assert.ok(!CONFIG.sources.some((source) => source.id === CONFIG.fixture.id));
+  assert.ok(!CONFIG.sources.some((source) => source.local));
+  assert.equal(CONFIG.fixture.local, true);
 });

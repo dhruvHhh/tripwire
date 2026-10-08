@@ -27,12 +27,28 @@
   const MAX_IGNORED_LOGGED = 40;
   const MINUTE = 60000;
 
-  // An unpacked (development) install has no update_url; the Web Store adds
-  // one. Only development installs load the bundled test list.
-  const isDevInstall = !('update_url' in chrome.runtime.getManifest());
+  // The bundled test list is for development installs only. Chrome is asked
+  // what kind of install this is; if it can't or won't say, or the answer is
+  // anything but a clear "development", the test list is not loaded.
+  let devInstallPromise = null;
 
-  function activeSources() {
-    return isDevInstall ? [...LISTS.sources, LISTS.fixture] : LISTS.sources;
+  function isDevInstall() {
+    if (!devInstallPromise) {
+      devInstallPromise = (async () => {
+        try {
+          // getSelf() needs no permission.
+          const self = await chrome.management.getSelf();
+          return blocklist.isDevelopmentInstall({ manifest: chrome.runtime.getManifest(), self });
+        } catch {
+          return false;
+        }
+      })();
+    }
+    return devInstallPromise;
+  }
+
+  async function activeSources() {
+    return (await isDevInstall()) ? [...LISTS.sources, LISTS.fixture] : LISTS.sources;
   }
 
   function urlsFor(source) {
@@ -97,7 +113,7 @@
 
   async function loadMatcher() {
     const lists = [];
-    for (const source of activeSources()) {
+    for (const source of await activeSources()) {
       const record = await readList(source.id);
       if (!record || !record.entries) continue;
       lists.push({
@@ -265,7 +281,7 @@
       let anyChanged = false;
 
       const sources = {};
-      for (const source of activeSources()) {
+      for (const source of await activeSources()) {
         const before = status.sources[source.id];
         if (onlyDue && !isDue(before, now)) {
           sources[source.id] = before;

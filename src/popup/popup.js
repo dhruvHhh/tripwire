@@ -83,11 +83,17 @@
   function renderFindings() {
     const scanned = Boolean(state && state.counts);
 
-    // The page's own verdict
+    // The page's own verdict. Being on a blocklist comes first.
+    const pageListing = scanned ? state.pageListing : null;
     const pageLevel = scanned ? state.pageVerdict.level : 'ok';
     const alert = $('page-alert');
-    alert.hidden = !(pageLevel in PAGE_ALERT_TITLES);
-    if (!alert.hidden) {
+    alert.hidden = !pageListing && !(pageLevel in PAGE_ALERT_TITLES);
+    if (pageListing) {
+      const { title, detail } = Tripwire.blocklist.describePageListing(pageListing, Date.now());
+      alert.className = 'alert dangerous';
+      $('page-alert-title').textContent = title;
+      $('page-alert-reason').textContent = detail;
+    } else if (!alert.hidden) {
       alert.className = `alert ${pageLevel}`;
       $('page-alert-title').textContent = PAGE_ALERT_TITLES[pageLevel];
       $('page-alert-reason').textContent = state.pageVerdict.reasons[0] || '';

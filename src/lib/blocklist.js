@@ -74,6 +74,7 @@
     // A small fake list bundled with the source tree. It is loaded only in a
     // development install (an unpacked extension), so the demo page can show
     // blocklist hits without depending on what the live lists contain today.
+    // See isDevelopmentInstall() for how that is decided.
     fixture: {
       id: 'fixture',
       name: 'Tripwire test list',
@@ -536,6 +537,33 @@
     };
   }
 
+  // What the popup says when the page itself is on a list.
+  function describePageListing(match, now) {
+    return {
+      title: `This page is listed as ${match.category} by ${match.name}`,
+      detail: `The list was updated ${formatAge(now - match.publishedAt)}. Links that stay on this site are marked dangerous too.`,
+    };
+  }
+
+  /**
+   * Whether this is a development install, the only kind that loads the
+   * bundled test list. The answer is yes only when everything says so:
+   *   - chrome.management.getSelf() reports installType "development", which
+   *     Chrome gives only to an unpacked extension loaded in developer mode
+   *     (Web Store installs are "normal", policy installs "admin", and
+   *     anything else "sideload" or "other");
+   *   - and the manifest has no update_url, which the Web Store adds to every
+   *     extension it publishes.
+   * Anything missing, unreadable or contradictory counts as "no".
+   *
+   * @param {{ manifest?: object|null, self?: { installType?: string }|null }} facts
+   */
+  function isDevelopmentInstall({ manifest, self } = {}) {
+    if (!self || self.installType !== 'development') return false;
+    if (!manifest || typeof manifest !== 'object') return false;
+    return !('update_url' in manifest);
+  }
+
   const isStale = (publishedAt, now) => now - publishedAt > CONFIG.staleAfterHours * 3600000;
 
   /**
@@ -602,6 +630,8 @@
     formatAge,
     listingReason,
     applyListing,
+    describePageListing,
+    isDevelopmentInstall,
     describeSource,
     describeAll,
   };

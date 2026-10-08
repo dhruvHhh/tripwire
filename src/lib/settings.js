@@ -78,12 +78,16 @@
 
   // What the toolbar icon shows: red links if there are any, otherwise amber
   // ones, otherwise nothing.
-  function toolbarBadge({ dangerous = 0, suspicious = 0 } = {}) {
-    const level = dangerous > 0 ? 'dangerous' : suspicious > 0 ? 'suspicious' : null;
+  //
+  // A page that is itself on a blocklist is always red, with "!" if it has no
+  // red links to count.
+  function toolbarBadge({ dangerous = 0, suspicious = 0, pageListed = false } = {}) {
+    const level = dangerous > 0 || pageListed ? 'dangerous' : suspicious > 0 ? 'suspicious' : null;
     if (!level) return { text: '', color: null, textColor: null };
 
     const count = level === 'dangerous' ? dangerous : suspicious;
-    const text = count > MAX_TOOLBAR_COUNT ? `${MAX_TOOLBAR_COUNT}+` : String(count);
+    let text = count > MAX_TOOLBAR_COUNT ? `${MAX_TOOLBAR_COUNT}+` : String(count);
+    if (count === 0) text = '!';
     return { text, ...TOOLBAR_COLORS[level] };
   }
 

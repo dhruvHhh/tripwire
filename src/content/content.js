@@ -40,11 +40,14 @@
     reportTimer = 0;
 
     const { dangerous = 0, suspicious = 0 } = scanner ? scanner.getCounts() : {};
-    const toolbarCounts = `${dangerous}/${suspicious}`;
+    const pageListed = Boolean(scanner && scanner.isPageListed());
+    const toolbarCounts = `${dangerous}/${suspicious}/${pageListed}`;
     if (toolbarCounts !== lastToolbarCounts) {
       lastToolbarCounts = toolbarCounts;
       try {
-        chrome.runtime.sendMessage({ type: MESSAGES.COUNTS, dangerous, suspicious }).catch(() => {});
+        chrome.runtime
+          .sendMessage({ type: MESSAGES.COUNTS, dangerous, suspicious, pageListed })
+          .catch(() => {});
       } catch {
         // The extension was reloaded or removed; this page's script is orphaned.
       }
@@ -128,6 +131,7 @@
       defaultMode: settings.resolveDefaultMode(stored.defaultMode),
       revealed,
       pageVerdict: null,
+      pageListing: null,
       counts: null,
       flagged: [],
       stats: null,

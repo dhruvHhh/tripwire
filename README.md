@@ -2,7 +2,7 @@
 
 Tripwire is a Chrome extension that scans every link on a web page and marks the risky ones with a small badge, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
 
-> **Status:** version 0.5.0. Links are scored by checks on the link itself and against two downloaded blocklists of known phishing and malware addresses. By default only amber and red links are marked. The links you browse never leave your browser; see [Privacy](#privacy).
+> **Status:** version 0.5.1. Links are scored by checks on the link itself and against two downloaded blocklists of known phishing and malware addresses. By default only amber and red links are marked. The links you browse never leave your browser; see [Privacy](#privacy).
 
 ## Roadmap
 
@@ -47,6 +47,8 @@ Tripwire also checks every link against two public lists of known bad addresses.
 | --- | --- | --- | --- |
 | [Phishing URL Blocklist](https://gitlab.com/malware-filter/phishing-filter) | Phishing | OpenPhish, IPThreat and PhishTank | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 | [Online Malicious URL Blocklist](https://gitlab.com/malware-filter/urlhaus-filter) | Malware downloads | URLhaus (abuse.ch) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+
+**The page itself.** The address of the page you are on is checked against the lists as well, not only its links. If it is listed, the popup says so at the top ("This page is listed as phishing by Phishing URL Blocklist"), the toolbar icon turns red, and links that stay on the same site are marked dangerous too. Links that leave the site keep their own verdict.
 
 Both are published by the [malware-filter](https://gitlab.com/malware-filter) project. Tripwire does not include or redistribute them: each browser downloads them from the project's own servers. Tripwire is not endorsed by the project or by the sources its lists are built from.
 
@@ -117,13 +119,13 @@ Settings are stored in `chrome.storage.sync`, so they follow your browser profil
 
 ## Toolbar icon and popup
 
-The toolbar icon shows a count for the current tab: the number of red destinations on a red background, or, if there are none, the number of amber destinations on amber. No number means neither was found.
+The toolbar icon shows a count for the current tab: the number of red destinations on a red background, or, if there are none, the number of amber destinations on amber. No number means neither was found. If the page itself is on a blocklist the icon is always red, and shows `!` when there are no red links to count.
 
 A destination is a distinct address and verdict, so a search result's title and its URL line count once. Hidden links count too, because a menu or dropdown can reveal them later. The count follows the page as links are added, changed and removed.
 
 The popup shows:
 
-- the current site, and a warning if the page's own address looks suspicious or dangerous;
+- the current site, and a warning if the page's own address is on a blocklist, or looks suspicious or dangerous;
 - how many links are being tracked, and how many distinct red and amber destinations there are. These update while the popup is open;
 - the mode for this site, the one-off "Show badges on this page" button, and the global default;
 - up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link;
@@ -186,7 +188,21 @@ node demo/serve.js
 - <http://paypa1.localhost:8080/> is the same page on a hostname that looks like a paypal lookalike (Chrome resolves any `.localhost` name to your own machine). Use it to see the page-verdict behavior.
 - <http://one.two.three.four.tripwire.localhost:8080/> is the same page on a hostname with many subdomains. Its single-page navigation buttons make the page's own verdict change without a reload.
 
-The demo page's blocklist section does not depend on what the real lists contain. An unpacked (development) install also loads a small made-up list, [test/fixtures/blocklist.txt](test/fixtures/blocklist.txt), whose entries are on reserved names plus a few made-up paths. It appears in the popup as "Tripwire test list". A Web Store install never loads it.
+- <http://listed.localhost:8080/demo> is the same page at an address that is on the test list described below. Use it to see what a listed page looks like.
+
+### The test list
+
+The demo page's blocklist section does not depend on what the real lists contain. A development install also loads a small made-up list, [test/fixtures/blocklist.txt](test/fixtures/blocklist.txt), whose entries are on reserved names plus a few made-up paths. It appears in the popup as "Tripwire test list".
+
+The test list is kept out of every other kind of install by three things:
+
+1. **Chrome has to say this is a development install.** The background worker asks `chrome.management.getSelf()` and loads the test list only if the answer has `installType: "development"`. Chrome gives that value only to an extension loaded unpacked in developer mode. A Web Store install is `"normal"`, a policy install is `"admin"`, and anything else is `"sideload"` or `"other"`.
+2. **The manifest must have no `update_url`.** The Web Store adds one to every extension it publishes, so a store install fails this check too.
+3. **Doubt means no.** If Chrome can't be asked, gives no answer, gives a value this code doesn't know, or the two checks disagree, the test list is not loaded.
+
+The decision is `isDevelopmentInstall()` in [src/lib/blocklist.js](src/lib/blocklist.js), with a test for each case. A list that isn't loaded is also never consulted, even if a copy was stored earlier.
+
+When the extension is packaged for the store (step 6), `test/` should be left out of the package as well, so the file is not there to load.
 
 The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
 

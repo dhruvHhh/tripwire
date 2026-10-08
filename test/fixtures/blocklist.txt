@@ -32,5 +32,9 @@ co.uk
 ||downloads.example/get.php?id=42^$all
 ||files.example:8443/payload.bin^$all
 !
+! --- The demo page itself, at one address ---
+! Open http://listed.localhost:8080/demo to see a page that is itself listed.
+||listed.localhost:8080/demo^$all
+!
 ! --- Entries the parser skips ---
 ||wild*card.example/anything^$all

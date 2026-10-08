@@ -76,6 +76,20 @@ test('toolbarBadge: red count wins, then amber, then nothing', () => {
   assert.equal(toolbarBadge().text, '');
 });
 
+test('toolbarBadge: a listed page is always red', () => {
+  const red = { color: '#d93025', textColor: '#ffffff' };
+  // No red links to count: an exclamation mark.
+  assert.deepEqual(toolbarBadge({ dangerous: 0, suspicious: 0, pageListed: true }), { text: '!', ...red });
+  // Amber links alone would have been amber; the listing wins.
+  assert.deepEqual(toolbarBadge({ dangerous: 0, suspicious: 7, pageListed: true }), { text: '!', ...red });
+  // Red links: their count, as usual.
+  assert.deepEqual(toolbarBadge({ dangerous: 4, suspicious: 7, pageListed: true }), { text: '4', ...red });
+  assert.equal(toolbarBadge({ dangerous: 250, pageListed: true }).text, '99+');
+  // Not listed: unchanged behaviour.
+  assert.equal(toolbarBadge({ dangerous: 0, suspicious: 0, pageListed: false }).text, '');
+  assert.equal(toolbarBadge({ dangerous: 0, suspicious: 7, pageListed: false }).color, '#f9ab00');
+});
+
 test('toolbarBadge caps large counts', () => {
   assert.equal(toolbarBadge({ dangerous: 99 }).text, '99');
   assert.equal(toolbarBadge({ dangerous: 100 }).text, '99+');

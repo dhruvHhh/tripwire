@@ -94,7 +94,7 @@ test('demo page has both listed and unlisted blocklist examples', () => {
 
 for (const { href, text, listed } of listedLinks) {
   test(`demo page blocklist: "${text}" is ${listed === 'yes' ? 'listed' : 'not listed'}`, () => {
-    const match = matchFixture(href);
+    const match = matchFixture(new URL(href, PAGE_URL).href);
     assert.equal(Boolean(match), listed === 'yes', href);
     if (match) {
       const verdict = blocklist.applyListing(analyzeLink({ href, text, pageUrl: PAGE_URL }), match, Date.now());
@@ -110,4 +110,28 @@ test('demo page: the test list matches nothing outside the blocklist section', (
   for (const { href, listed } of links) {
     if (!listed) assert.equal(matchFixture(new URL(href, PAGE_URL).href), null, href);
   }
+});
+
+// The demo's "a page that is itself listed" case: at this address the page is
+// on the test list, so its same-site links must turn dangerous.
+test('demo page at its listed address: the page is listed and same-site links inherit', () => {
+  const pageUrl = 'http://listed.localhost:8080/demo';
+  const listing = matchFixture(pageUrl);
+  assert.ok(listing, 'the test list should name this address');
+  assert.equal(matchFixture('http://localhost:8080/'), null, 'the normal address is not listed');
+  assert.equal(matchFixture('http://listed.localhost:8080/'), null, 'only the one address is listed, not the host');
+
+  assert.equal(analyzePage(pageUrl).level, 'ok', 'nothing about the address itself is suspicious');
+  const pageVerdict = blocklist.applyListing(analyzePage(pageUrl), listing, Date.now());
+  const sameSite = links.filter((link) => link.href.startsWith('/'));
+  assert.ok(sameSite.length >= 2);
+  for (const { href, text } of sameSite) {
+    const result = analyzeLink({ href: new URL(href, pageUrl).href, text, pageUrl, pageVerdict });
+    assert.equal(result.level, 'dangerous', href);
+    assert.match(result.reasons[0], /this page itself looks dangerous: listed as phishing by Tripwire test list/i);
+  }
+
+  // Links that leave the site keep their own verdict.
+  const outside = analyzeLink({ href: 'https://en.wikipedia.org/wiki/Phishing', text: 'Read about phishing', pageUrl, pageVerdict });
+  assert.equal(outside.level, 'ok');
 });

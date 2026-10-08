@@ -223,6 +223,18 @@
     <li><a href="https://someone.github.io/" data-expect="ok" data-listed="no">Someone's GitHub Pages site</a><span class="why">green</span></li>
   </ul>
 
+  <h3>A page that is itself listed</h3>
+  <p class="expect">
+    The test list also names this demo page at one address. Open
+    <code>http://listed.localhost:8080/demo</code> (clicking is disabled here, so type it). There,
+    the popup opens with "This page is listed as phishing by Tripwire test list", the toolbar
+    count is red, and the same-site links (the logo, "Docs" and "About this page") turn red. Back
+    on the normal address they are green.
+  </p>
+  <ul>
+    <li><a href="http://listed.localhost:8080/demo" data-expect="ok" data-listed="yes">This page at its listed address</a><span class="why">red: the link itself goes to a listed address</span></li>
+  </ul>
+
   <h2 class="layout">Click-tracking links</h2>
   <p class="expect">
     Newsletters send every link through a tracking service, so text that shows one domain while

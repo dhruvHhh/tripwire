@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tripwire",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Flags risky links on web pages with a small badge, using checks that run on your device.",
   "icons": {
     "16": "icons/icon16.png",
@@ -26,11 +26,13 @@
       "matches": ["http://*/*", "https://*/*"],
       "js": [
         "src/lib/analyzer.js",
+        "src/lib/bookkeeping.js",
         "src/lib/geometry.js",
         "src/lib/settings.js",
         "src/content/styles.js",
         "src/content/badge.js",
         "src/content/overlay.js",
+        "src/content/scanner.js",
         "src/content/content.js"
       ],
       "run_at": "document_idle"

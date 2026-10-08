@@ -36,6 +36,10 @@
     .pill { display: inline-block; padding: 0.4rem 1.1rem; border-radius: 999px; background: #1a73e8; color: #fff; text-decoration: none; }
     .fixed-chip { position: fixed; right: 16px; bottom: 16px; padding: 0.4rem 0.8rem; border: 1px solid #dadce0; border-radius: 8px; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
     .zero { display: inline-block; width: 0; height: 0; overflow: hidden; }
+    .tall { height: 220px; }
+    .link-grid { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; align-content: flex-start; }
+    button { font: inherit; padding: 0.3rem 0.8rem; cursor: pointer; }
+    code { background: #f1f3f4; padding: 0 0.25rem; border-radius: 3px; }
   </style>
 </head>
 <body>
@@ -123,6 +127,68 @@
     Fixed corner: <a href="https://bit.ly/3xYzAbC" data-expect="suspicious">paypal.com</a>
   </div>
 
+  <h2 class="layout">Dynamic page tests</h2>
+  <p class="expect">Everything in this section changes the page after it has loaded. Keep the Tripwire popup open while you try them: its numbers update as you go.</p>
+
+  <h3>Inject 500 links</h3>
+  <p class="expect">
+    Adds 500 links at once: 450 ordinary, 25 amber and 25 red, each to a different address. The
+    page doesn't freeze, and within a second the toolbar count rises by 25 and the popup's numbers
+    by 500, 25 and 25. "Remove them" takes the counts back down.
+  </p>
+  <p>
+    <button type="button" id="inject-500">Inject 500 links</button>
+    <button type="button" id="clear-injected">Remove them</button>
+    <span id="inject-status" class="why"></span>
+  </p>
+  <div id="injected" class="scroll-box tall link-grid"></div>
+
+  <h3>Link whose address changes</h3>
+  <p class="expect">
+    Starts green. Press the button and it turns red without a reload, and the toolbar count goes up
+    by one. Press again and it is green again.
+  </p>
+  <p>
+    <a id="swap-link" href="https://www.example.com/account">Account settings</a>
+    <button type="button" id="swap-href">Swap its address</button>
+    <span id="swap-status" class="why"></span>
+  </p>
+
+  <h3>Infinite scroll</h3>
+  <p class="expect">
+    Scroll the box to its end and 20 more rows load, every time. Every 5th row is amber and every
+    7th is red. The box keeps only its newest 200 rows, so "links scanned" in the popup levels off
+    instead of growing forever.
+  </p>
+  <div id="feed" class="scroll-box tall"><div id="feed-end">Loading more&hellip;</div></div>
+
+  <h3>Single-page navigation</h3>
+  <p class="expect">
+    These buttons change the address with <code>history.pushState</code>, without loading a page.
+    On <code>localhost</code> nothing else changes. To see verdicts change, open this page as
+    <code>http://one.two.three.four.tripwire.localhost:8080/</code> and press the first button. A
+    very long address on top of that many subdomains makes the page itself suspicious, so the
+    same-site links (the logo, "Docs" and "About this page") turn amber and the popup shows a page
+    warning. The second button turns them green again.
+  </p>
+  <p>
+    <button type="button" id="spa-long">Go to a very long address</button>
+    <button type="button" id="spa-short">Go back to the short address</button>
+    <span id="spa-status" class="why"></span>
+  </p>
+
+  <h3>Shadow roots</h3>
+  <p class="expect">
+    Box 1 is an open shadow root: its links get badges like any others, and its button adds a red
+    link that gets one too. Box 2 is a custom element whose definition loads when you press its
+    button: its red link gets a badge shortly after. Box 3 is a closed shadow root: Tripwire does
+    not look inside, so its red link gets no badge and is not counted.
+  </p>
+  <div id="open-shadow-host"></div>
+  <p><button type="button" id="define-late">Load the definition for box 2</button></p>
+  <tripwire-demo-late></tripwire-demo-late>
+  <div id="closed-shadow-host"></div>
+
   <h2 class="ok">Green: no red flags found</h2>
   <ul>
     <li><a href="https://en.wikipedia.org/wiki/Phishing" data-expect="ok">Read about phishing</a><span class="why">ordinary link</span></li>
@@ -192,10 +258,125 @@
   </p>
 
   <script>
-    // Keep the examples from navigating anywhere.
+    // Keep the examples from navigating anywhere. composedPath() sees links
+    // inside shadow roots, which event.target does not.
     document.addEventListener('click', (event) => {
-      if (event.target.closest('a')) event.preventDefault();
+      if (event.composedPath().some((node) => node.localName === 'a')) event.preventDefault();
     });
+
+    const byId = (id) => document.getElementById(id);
+
+    function makeLink(href, text) {
+      const link = document.createElement('a');
+      link.href = href;
+      link.textContent = text;
+      return link;
+    }
+
+    // --- Inject 500 links ---------------------------------------------------
+    let batch = 0;
+    byId('inject-500').addEventListener('click', () => {
+      batch++;
+      const fragment = document.createDocumentFragment();
+      for (let i = 1; i <= 500; i++) {
+        const id = batch + '-' + i;
+        if (i % 20 === 0) fragment.append(makeLink('https://www.paypa1.example/item/' + id, 'Red ' + id));
+        else if (i % 20 === 10) fragment.append(makeLink('http://203.0.113.9/item/' + id, 'Amber ' + id));
+        else fragment.append(makeLink('https://example.com/item/' + id, 'Item ' + id));
+      }
+      byId('injected').append(fragment);
+      byId('inject-status').textContent = byId('injected').childElementCount + ' links in the box';
+    });
+    byId('clear-injected').addEventListener('click', () => {
+      byId('injected').replaceChildren();
+      byId('inject-status').textContent = 'removed';
+    });
+
+    // --- Link whose address changes -----------------------------------------
+    const GOOD_HREF = 'https://www.example.com/account';
+    const BAD_HREF = 'https://www.paypa1.example/account';
+    byId('swap-href').addEventListener('click', () => {
+      const link = byId('swap-link');
+      const toBad = link.getAttribute('href') === GOOD_HREF;
+      link.setAttribute('href', toBad ? BAD_HREF : GOOD_HREF);
+      byId('swap-status').textContent = 'now points to ' + link.hostname;
+    });
+
+    // --- Infinite scroll ----------------------------------------------------
+    const feed = byId('feed');
+    const feedEnd = byId('feed-end');
+    const FEED_BATCH = 20;
+    const FEED_LIMIT = 200;
+    let story = 0;
+    function loadMoreStories() {
+      for (let i = 0; i < FEED_BATCH; i++) {
+        story++;
+        const row = document.createElement('p');
+        if (story % 7 === 0) row.append(makeLink('https://arnazon.example/deal/' + story, 'Story ' + story + ': flash deal'));
+        else if (story % 5 === 0) row.append(makeLink('https://gooogle.example/q/' + story, 'Story ' + story + ': search tips'));
+        else row.append(makeLink('https://news.example.com/story/' + story, 'Story ' + story + ': an ordinary headline'));
+        feed.insertBefore(row, feedEnd);
+      }
+      while (feed.childElementCount > FEED_LIMIT + 1) feed.firstElementChild.remove();
+    }
+    new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreStories();
+    }, { root: feed, rootMargin: '100px' }).observe(feedEnd);
+
+    // --- Single-page navigation ---------------------------------------------
+    function showAddress() {
+      byId('spa-status').textContent = 'address is now ' + location.href.length + ' characters long';
+    }
+    byId('spa-long').addEventListener('click', () => {
+      history.pushState({}, '', '/spa/' + 'section-'.repeat(40) + 'end');
+      showAddress();
+    });
+    byId('spa-short').addEventListener('click', () => {
+      history.pushState({}, '', '/');
+      showAddress();
+    });
+
+    // --- Shadow roots -------------------------------------------------------
+    const BOX_STYLE = 'div { border: 1px solid #dadce0; border-radius: 6px; padding: 0.5rem 0.9rem; margin: 0.5rem 0; font: 16px/1.6 system-ui, sans-serif; } a { margin-right: 1rem; }';
+    function fillBox(root, title) {
+      const style = document.createElement('style');
+      style.textContent = BOX_STYLE;
+      const box = document.createElement('div');
+      box.append(title + ' ');
+      root.append(style, box);
+      return box;
+    }
+
+    const openBox = fillBox(byId('open-shadow-host').attachShadow({ mode: 'open' }), 'Box 1 (open):');
+    openBox.append(
+      makeLink('https://example.com/shadow/ordinary', 'Ordinary link'),
+      makeLink('http://203.0.113.9/shadow/login', 'Raw IP login'),
+      makeLink('https://www.paypa1.example/shadow/signin', 'Lookalike sign-in'),
+    );
+    const addInShadow = document.createElement('button');
+    addInShadow.type = 'button';
+    addInShadow.textContent = 'Add a red link in here';
+    let shadowExtra = 0;
+    addInShadow.addEventListener('click', () => {
+      shadowExtra++;
+      openBox.insertBefore(makeLink('https://arnazon.example/shadow/' + shadowExtra, 'Added ' + shadowExtra), addInShadow);
+    });
+    openBox.append(addInShadow);
+
+    byId('define-late').addEventListener('click', () => {
+      if (customElements.get('tripwire-demo-late')) return;
+      customElements.define('tripwire-demo-late', class extends HTMLElement {
+        constructor() {
+          super();
+          const box = fillBox(this.attachShadow({ mode: 'open' }), 'Box 2 (defined late):');
+          box.append(makeLink('https://pay-tm.example/shadow/kyc', 'Complete KYC'));
+        }
+      });
+      byId('define-late').textContent = 'Definition for box 2 is loaded';
+    });
+
+    const closedBox = fillBox(byId('closed-shadow-host').attachShadow({ mode: 'closed' }), 'Box 3 (closed):');
+    closedBox.append(makeLink('https://www.paypa1.example/closed/signin', 'Lookalike sign-in, never badged'));
   </script>
 </body>
 </html>

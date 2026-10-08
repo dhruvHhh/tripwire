@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { analyzeLink } = require('../src/lib/analyzer.js');
+const { analyzeLink, analyzePage } = require('../src/lib/analyzer.js');
 
 const PAGE_URL = 'http://localhost:8080/';
 const html = fs.readFileSync(path.join(__dirname, '..', 'demo', 'links.html'), 'utf8');
@@ -50,4 +50,19 @@ test('demo page on its lookalike hostname: same-site links turn dangerous', () =
     assert.equal(result.level, 'dangerous', `${href}: ${JSON.stringify(result.reasons)}`);
     assert.match(result.reasons[0], /this page itself looks dangerous/i);
   }
+});
+
+// The page's single-page-navigation demo relies on this hostname being fine at
+// its short address and suspicious at the long one the button pushes.
+test('demo page on its many-subdomains hostname: the long address flips the page verdict', () => {
+  const short = 'http://one.two.three.four.tripwire.localhost:8080/';
+  const long = `${short}spa/${'section-'.repeat(40)}end`;
+  assert.equal(analyzePage(short).level, 'ok');
+  assert.equal(analyzePage(long).level, 'suspicious');
+
+  const sameSite = { href: `${short}about`, text: 'About this page' };
+  assert.equal(analyzeLink({ ...sameSite, pageUrl: short }).level, 'ok');
+  const onLongPage = analyzeLink({ ...sameSite, pageUrl: long });
+  assert.equal(onLongPage.level, 'suspicious');
+  assert.match(onLongPage.reasons[0], /this page itself looks suspicious/i);
 });

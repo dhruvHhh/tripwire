@@ -2,14 +2,14 @@
 
 Tripwire is a Chrome extension that scans every link on a web page and marks the risky ones with a small badge, so you can spot a bad link before you click it. It runs in the page as you browse, and its goal is to flag suspicious destinations (lookalike domains, odd URL tricks, known-bad sites) while staying out of the way on normal pages.
 
-> **Status:** version 0.3.0. Links are scored by offline checks on the link itself, and by default only amber and red links are marked. Tripwire makes no network requests yet.
+> **Status:** version 0.4.0. Links are scored by offline checks on the link itself, including links a page adds after it loads, and by default only amber and red links are marked. Tripwire makes no network requests yet.
 
 ## Roadmap
 
 1. ✅ **Skeleton:** Manifest V3 extension that puts a neutral badge next to every link.
 2. ✅ **Local heuristics:** score links on-device (lookalike domains, IP hosts, punycode, suspicious TLDs, etc.) and color the badges.
    - ✅ Follow-up: lookalike-page detection, display modes, toolbar count and popup, and badges drawn in an overlay instead of inside the page.
-3. **Dynamic pages and performance:** scan links added after load (MutationObserver) and scan lazily on very large pages.
+3. ✅ **Dynamic pages and performance:** scan links added or changed after load, follow single-page navigation, scan open shadow roots, and do all of it in idle time.
 4. **Reputation lookups:** check link destinations against external reputation sources via the service worker, with caching.
 5. **UI:** an options page, richer link details, and managing the per-site list.
 6. **Publish:** polish, privacy policy, and release on the Chrome Web Store.
@@ -59,12 +59,14 @@ Settings are stored in `chrome.storage.sync`, so they follow your browser profil
 
 ## Toolbar icon and popup
 
-The toolbar icon shows a count for the current tab: the number of red links on a red background, or, if there are none, the number of amber links on amber. No number means neither was found.
+The toolbar icon shows a count for the current tab: the number of red destinations on a red background, or, if there are none, the number of amber destinations on amber. No number means neither was found.
+
+A destination is a distinct address and verdict, so a search result's title and its URL line count once. Hidden links count too, because a menu or dropdown can reveal them later. The count follows the page as links are added, changed and removed.
 
 The popup shows:
 
 - the current site, and a warning if the page's own address looks suspicious or dangerous;
-- how many links were scanned and how many are red and amber;
+- how many links are being tracked, and how many distinct red and amber destinations there are. These update while the popup is open;
 - the mode for this site, the one-off "Show badges on this page" button, and the global default;
 - up to 10 flagged links. Clicking one scrolls to it and outlines it for a moment. It does not open the link.
 
@@ -73,11 +75,29 @@ The popup shows:
 Tripwire adds no elements next to your links, so it can't shift a page's layout. Every badge lives in one overlay (`<tripwire-overlay>`, a closed shadow root attached to `<html>`) and is positioned over the top-right corner of its link's first line of text, or of its image for a picture link.
 
 - Only links that are on screen and actually visible get a badge. Links that are hidden, zero-size, scrolled out of a scroll box, or covered by a sticky header or dialog don't.
-- Badges follow their links through page scrolling, scrolling inside nested boxes, resizes, and fixed or sticky headers.
+- Badges follow their links through page scrolling, scrolling inside nested boxes, resizes, DOM changes, and fixed or sticky headers.
 - The overlay takes no pointer events anywhere, so it can never receive a click meant for the page. Tooltips are shown by watching where the pointer is.
 - When nearby links go to the same address with the same verdict, such as a search result's title and its URL line, they share one badge.
 
-The only thing Tripwire writes into the page itself is a `data-tripwire-processed` attribute on links it has scanned.
+The only thing Tripwire writes into the page itself is a `data-tripwire-processed` attribute on links it has given a verdict.
+
+## Pages that change
+
+Tripwire keeps scanning after the page has loaded.
+
+- **New and changed links.** Links added later (search panels, feeds, infinite scroll) are scanned, and a link whose `href` or contents change is scanned again. Links removed from the page lose their badge and drop out of the counts.
+- **Single-page navigation.** When a site changes its address without loading a new page, the page's own address is judged again. If that verdict changed, every link is re-checked, since same-site links depend on it.
+- **Shadow roots.** Links inside open shadow roots are scanned and watched like the rest of the page. A shadow root is found when its host element is scanned; one attached later is picked up only for custom elements whose definition had not loaded yet. Closed shadow roots are not scanned.
+- **Editable areas** (email composers, rich-text editors) are left alone.
+
+### Performance
+
+- Nothing is analysed where it is noticed. The first scan and every later change go into a queue that is worked through in idle time, a few milliseconds at a time.
+- Positioning is driven by events: scrolling, resizing, DOM changes, images and fonts loading. A two-second fallback check covers layout changes that fire no event; it runs only while a badge is drawn and the tab is visible.
+- A page where no badge is drawn costs nothing beyond scanning its links once.
+- Memory stays bounded on long-lived pages: removed links are forgotten, and the verdict cache holds at most 2,000 entries.
+
+To see what Tripwire is doing on a page, set `debug: true` in `CONFIG` at the top of [src/lib/analyzer.js](src/lib/analyzer.js), reload the extension, and open the page's DevTools console with the "Verbose" level on. It logs links tracked and analysed, time spent analysing and positioning, and the number of mutation batches.
 
 ## Load it in Chrome (unpacked)
 
@@ -103,8 +123,9 @@ To see the badges, modes and placement in the browser, serve the demo page and o
 node demo/serve.js
 ```
 
-- <http://localhost:8080/> has a mix of green, amber and red links, plus placement tests: a sticky flex nav bar, a scrollable box, an image link, a wrapped link, hidden links and a fixed corner.
+- <http://localhost:8080/> has a mix of green, amber and red links, plus placement tests (a sticky flex nav bar, a scrollable box, an image link, a wrapped link, hidden links, a fixed corner) and dynamic tests (inject 500 links, change a link's address, infinite scroll, single-page navigation, shadow roots).
 - <http://paypa1.localhost:8080/> is the same page on a hostname that looks like a paypal lookalike (Chrome resolves any `.localhost` name to your own machine). Use it to see the page-verdict behavior.
+- <http://one.two.three.four.tripwire.localhost:8080/> is the same page on a hostname with many subdomains. Its single-page navigation buttons make the page's own verdict change without a reload.
 
 The page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it.
 
@@ -115,14 +136,16 @@ manifest.json              Extension manifest (MV3)
 icons/                     Toolbar / store icons (placeholders)
 src/lib/analyzer.js        analyzeLink() and analyzePage(): pure, offline scoring and its config
 src/lib/settings.js        Display modes, storage keys, message names, toolbar count
+src/lib/bookkeeping.js     Pure helpers: distinct-destination counts, bounded verdict cache
 src/lib/geometry.js        Pure helpers: badge and tooltip placement, grouping nearby links
 src/content/styles.js      CSS for the overlay, badges and tooltip
 src/content/badge.js       Creates a badge; exposes setVerdict() and its tooltip
 src/content/overlay.js     The overlay: tracks links, positions badges, shows tooltips
-src/content/content.js     Scans links, applies the mode, answers the popup
+src/content/scanner.js     Finds links, watches the page for changes, works through them in idle time
+src/content/content.js     Applies the mode, reports counts, answers the popup
 src/popup/                 Toolbar popup
 src/background/            Service worker: sets the toolbar count for each tab
-test/                      Tests for the analyzer, settings, geometry and the demo page
+test/                      Tests for the analyzer, settings, bookkeeping, geometry and the demo page
 demo/                      Demo page and a tiny server for it
 ```
 

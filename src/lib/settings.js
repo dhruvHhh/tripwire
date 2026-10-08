@@ -33,6 +33,10 @@
     COUNTS: 'tripwire:counts', // content -> service worker: toolbar numbers
   };
 
+  // Name of the connection an open popup holds to its tab's content script,
+  // over which the content script pushes state as it changes.
+  const POPUP_PORT = 'tripwire:popup';
+
   const TOOLBAR_COLORS = {
     dangerous: { color: '#d93025', textColor: '#ffffff' },
     suspicious: { color: '#f9ab00', textColor: '#202124' },
@@ -103,6 +107,7 @@
     DEFAULT_MODE_CHOICES,
     DEFAULT_MODE_KEY,
     MESSAGES,
+    POPUP_PORT,
     isMode,
     siteKey,
     resolveDefaultMode,

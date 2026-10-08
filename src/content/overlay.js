@@ -14,6 +14,10 @@
 //
 // The overlay takes no pointer events anywhere, so it can never swallow a
 // click. Tooltips come from watching where the pointer is instead.
+//
+// Cost model: nothing here runs unless a link that wants a badge is on
+// screen. Observers and the fallback poll are switched on and off to match,
+// so a page with no badges to draw costs nothing.
 
 (() => {
   'use strict';
@@ -29,6 +33,13 @@
   // How far inside the anchor's top-right corner the "is it really visible"
   // hit test lands.
   const PROBE_INSET = 8;
+  // The hit test is the one expensive step, and on some pages (thousands of
+  // siblings in one container) it is very expensive. Each pass spends at most
+  // this long on hit tests, always doing at least the minimum number. Links
+  // that miss out keep their last answer and go to the front of the queue.
+  const HIT_TEST_BUDGET_MS = 3;
+  const MIN_HIT_TESTS = 12;
+  const HIT_TESTS_PER_CLOCK_CHECK = 6;
   // How many of a link's text nodes to look at when finding its first line.
   const MAX_TEXT_NODES = 12;
   // Ignore position changes smaller than this, so rounding noise in page
@@ -40,9 +51,15 @@
   const HOVER_DELAY_MS = 120;
   const HIGHLIGHT_MS = 2500;
   const HIGHLIGHT_PADDING = 4;
-  // Layout can change without any event we listen for (script-driven
-  // animation, content swapped in place). A slow re-check catches those.
-  const DRIFT_CHECK_MS = 1000;
+  // DOM changes can move links. However fast they arrive, they cause at most
+  // one repositioning pass per interval.
+  const NUDGE_INTERVAL_MS = 100;
+  // Attribute changes that commonly move or reveal things.
+  const LAYOUT_ATTRIBUTES = ['class', 'style', 'hidden', 'open'];
+  // Some layout changes fire no event at all (CSS-only animation, a :hover
+  // rule that shifts content). This slow re-check catches them. It only runs
+  // while a badge is drawn and the tab is visible.
+  const FALLBACK_POLL_MS = 2000;
 
   const MEDIA_SELECTOR = 'img, picture, svg, video, canvas';
   // Both spellings of each option: the short names are the original ones.
@@ -143,10 +160,12 @@
     shadow.append(fixedProbe, ring, tooltip);
     docElement.appendChild(host);
 
-    const items = []; // Every tracked link, in document order.
+    const items = new Set(); // Every tracked link.
     const itemByLink = new WeakMap();
+    // Links that want a badge and are on screen: the only ones a pass looks at.
+    const candidates = new Set();
     let displayed = new Set(); // Items whose badge is currently showing.
-    let hasCandidates = false; // Any wanted link on screen at the last pass.
+    let filter = () => false; // Which items want a badge at all.
     let highlighted = null; // { link, until }
     let lastScroll = { x: window.scrollX, y: window.scrollY };
     let frame = 0;
@@ -166,13 +185,39 @@
     let tooltipSize = { width: 0, height: 0 };
     let hoverTimer = 0;
 
+    let nudgeTimer = 0;
+    let lastNudge = 0;
+    let pollTimer = 0;
+    let watchingLayout = false;
+
+    let passNumber = 0;
+    // Set by anything that may have moved or covered a link. Hit-test answers
+    // older than the pass that picked it up count as stale.
+    let stale = true;
+    let freshFrom = 0;
+    const stats = { passes: 0, positionMs: 0, hitTests: 0 };
+
+    const hasWork = () => candidates.size > 0 || displayed.size > 0 || highlighted !== null;
+
     function schedule() {
-      if (!frame && !destroyed) frame = requestAnimationFrame(update);
+      stale = true;
+      if (!frame && !destroyed && hasWork()) frame = requestAnimationFrame(update);
     }
 
     function relayout() {
       layoutVersion++;
       schedule();
+    }
+
+    // For DOM changes, which can arrive in floods: one pass per interval.
+    function nudge() {
+      if (nudgeTimer || destroyed || !hasWork()) return;
+      const wait = Math.max(0, NUDGE_INTERVAL_MS - (performance.now() - lastNudge));
+      nudgeTimer = setTimeout(() => {
+        nudgeTimer = 0;
+        lastNudge = performance.now();
+        schedule();
+      }, wait);
     }
 
     // --- Measuring (reads only) ---------------------------------------------
@@ -191,6 +236,8 @@
           height: content.bottom - content.top,
         };
         item.anchorVersion = layoutVersion;
+        // The document, or the shadow root the link lives in.
+        item.root = item.link.getRootNode();
       }
       if (!item.anchorOffset) return null;
 
@@ -200,10 +247,9 @@
       return { left, top, right: left + width, bottom: top + height, width, height };
     }
 
-    // Returns the anchor rect if it can really be seen, else null. The hit
-    // test is what catches a link scrolled out of a nested scroll box, or
-    // covered by a sticky header, menu or dialog.
-    function measure(item) {
+    // The cheap checks. Returns the anchor rect if the link is rendered with
+    // its corner inside the viewport, else null.
+    function locate(item) {
       const { link } = item;
       if (!link.isConnected) return null;
 
@@ -214,9 +260,20 @@
       const x = rect.right - Math.min(PROBE_INSET, rect.width / 2);
       const y = rect.top + Math.min(PROBE_INSET, rect.height / 2);
       if (x < 0 || y < 0 || x >= viewport.width || y >= viewport.height) return null;
+      return rect;
+    }
 
-      const hit = document.elementFromPoint(x, y);
-      return hit && link.contains(hit) ? rect : null;
+    // The expensive check: is the link really what you'd see at its corner?
+    // This is what catches a link scrolled out of a nested scroll box, or
+    // covered by a sticky header, menu or dialog.
+    function isUnobstructed(item, rect) {
+      const x = rect.right - Math.min(PROBE_INSET, rect.width / 2);
+      const y = rect.top + Math.min(PROBE_INSET, rect.height / 2);
+      // Asked of the link's own root: from the document, everything inside a
+      // shadow root looks like its host element.
+      const { root } = item;
+      const hit = root && root.elementFromPoint ? root.elementFromPoint(x, y) : null;
+      return Boolean(hit && item.link.contains(hit));
     }
 
     // --- Drawing (writes only) ----------------------------------------------
@@ -318,11 +375,43 @@
       updateHover();
     }
 
+    // --- Watchers that only run while they are needed -------------------------
+
+    // Attribute changes anywhere in the document can move links, but watching
+    // them is only worth it while there is a badge that could move.
+    const layoutObserver = new MutationObserver(nudge);
+
+    function syncWatchers() {
+      const needsLayoutWatch = !destroyed && candidates.size > 0;
+      if (needsLayoutWatch !== watchingLayout) {
+        watchingLayout = needsLayoutWatch;
+        if (needsLayoutWatch) {
+          layoutObserver.observe(document, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: LAYOUT_ATTRIBUTES,
+          });
+        } else {
+          layoutObserver.disconnect();
+        }
+      }
+
+      const needsPoll =
+        !destroyed && displayed.size > 0 && document.visibilityState === 'visible';
+      if (needsPoll && !pollTimer) {
+        pollTimer = setInterval(relayout, FALLBACK_POLL_MS);
+      } else if (!needsPoll && pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = 0;
+      }
+    }
+
     // --- The pass: measure everything, then draw everything ------------------
 
     function update() {
       frame = 0;
       if (destroyed) return;
+      const started = performance.now();
       // Some pages rebuild <html>'s children; put the overlay back if so.
       if (!host.isConnected) docElement.appendChild(host);
 
@@ -339,14 +428,47 @@
         Math.abs(scroll.x - lastScroll.x) + Math.abs(scroll.y - lastScroll.y) >= 1;
       lastScroll = scroll;
 
-      const visible = [];
-      hasCandidates = false;
-      for (const item of items) {
-        if (!item.wanted || !item.onScreen) continue;
-        hasCandidates = true;
-
-        const rect = measure(item);
+      passNumber++;
+      if (stale) {
+        stale = false;
+        freshFrom = passNumber;
+      }
+      const located = [];
+      for (const item of candidates) {
+        const rect = locate(item);
         if (rect) {
+          located.push({ item, rect, key: item.key });
+        } else {
+          item.lastRect = null;
+          item.unobstructed = false;
+          item.testedAt = 0; // Test it first when it comes back.
+        }
+      }
+
+      // Hit tests, least recently tested first, until the budget runs out.
+      located.sort((a, b) => a.item.testedAt - b.item.testedAt);
+      const hitTestsStarted = performance.now();
+      let tested = 0;
+      for (const { item, rect } of located) {
+        if (
+          tested >= MIN_HIT_TESTS &&
+          tested % HIT_TESTS_PER_CLOCK_CHECK === 0 &&
+          performance.now() - hitTestsStarted > HIT_TEST_BUDGET_MS
+        ) {
+          break;
+        }
+        item.unobstructed = isUnobstructed(item, rect);
+        item.testedAt = passNumber;
+        tested++;
+      }
+      stats.hitTests += tested;
+      // Links still holding a stale answer: come back for them next frame.
+      const moreToTest = located.some(({ item }) => item.testedAt < freshFrom);
+
+      const visible = [];
+      for (const entry of located) {
+        const { item, rect } = entry;
+        if (item.unobstructed) {
           if (item.anchor === undefined) {
             item.anchor = isInFixedSubtree(item.link) ? 'viewport' : 'page';
           } else if (windowScrolled && item.lastRect) {
@@ -356,11 +478,14 @@
               Math.abs(rect.top - item.lastRect.top) < 0.5;
             item.anchor = stayedPut ? 'viewport' : 'page';
           }
-          visible.push({ item, rect, key: item.key });
+          visible.push(entry);
         }
         item.lastRect = rect;
       }
 
+      // Links arrive in the order the page added them, not page order. Within
+      // a group, the badge goes to the topmost (then leftmost) link.
+      visible.sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
       const leaders = pickGroupLeaders(visible, GROUP_GAP);
 
       let ringRect = null;
@@ -401,6 +526,12 @@
       }
 
       updateHover();
+      syncWatchers();
+
+      stats.passes++;
+      stats.positionMs += performance.now() - started;
+      // Not schedule(): nothing new happened, this only finishes the round.
+      if (moreToTest && !frame && !destroyed) frame = requestAnimationFrame(update);
     }
 
     // --- Observers and events: everything funnels into schedule() -----------
@@ -411,36 +542,64 @@
     const visibilityObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const item = itemByLink.get(entry.target);
-        if (item) item.onScreen = entry.isIntersecting;
+        if (!item || !item.wanted) continue;
+        item.onScreen = entry.isIntersecting;
+        if (item.onScreen) candidates.add(item);
+        else candidates.delete(item);
       }
+      syncWatchers();
       schedule();
     });
 
-    // Fires for block-level links that change size, and for the page itself
-    // growing or shrinking (images loading, sections expanding). Inline links
-    // have no box of their own to observe; the page-level observation and the
-    // drift check cover them.
+    // Fires when the page itself grows or shrinks (images loading, sections
+    // expanding). Individual links are not observed: most are inline, which
+    // never reports a size, and thousands of observations cost time on every
+    // frame. DOM nudges and the fallback poll cover a link that resizes alone.
     const resizeObserver = new ResizeObserver(relayout);
     resizeObserver.observe(docElement);
     if (document.body) resizeObserver.observe(document.body);
 
+    function onVisibilityChange() {
+      syncWatchers();
+      relayout();
+    }
+
     const listenerOptions = { capture: true, passive: true };
-    // Capture phase: scroll doesn't bubble, so this is how scrolling inside
-    // any nested container reaches us.
+    // Capture phase: scroll (like load and toggle) doesn't bubble, so this is
+    // how scrolling inside any nested container reaches us.
     document.addEventListener('scroll', schedule, listenerOptions);
     document.addEventListener('transitionend', relayout, listenerOptions);
     document.addEventListener('animationend', relayout, listenerOptions);
+    document.addEventListener('load', relayout, listenerOptions); // Images arriving.
+    document.addEventListener('toggle', relayout, listenerOptions); // <details>, popovers.
     document.addEventListener('mousemove', onPointerMove, listenerOptions);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     docElement.addEventListener('mouseleave', onPointerLeave);
     window.addEventListener('resize', relayout, listenerOptions);
-
-    const driftTimer = setInterval(() => {
-      if (!document.hidden && (hasCandidates || highlighted)) relayout();
-    }, DRIFT_CHECK_MS);
+    if (document.fonts) document.fonts.addEventListener('loadingdone', relayout);
 
     // --- Public API ----------------------------------------------------------
 
-    // Starts tracking a link. Nothing is drawn until setFilter() wants it.
+    function setWanted(item, wanted) {
+      if (wanted === item.wanted) return;
+      item.wanted = wanted;
+      if (wanted) {
+        // The observer reports straight away whether the link is on screen.
+        visibilityObserver.observe(item.link);
+      } else {
+        visibilityObserver.unobserve(item.link);
+        item.onScreen = false;
+        item.lastRect = null;
+        item.unobstructed = false;
+        item.testedAt = 0;
+        candidates.delete(item);
+        hide(item);
+        displayed.delete(item);
+      }
+    }
+
+    // Starts tracking a link and returns its handle. Whether it gets a badge
+    // is up to the current filter.
     function add(link, { level, reasons, key }) {
       const item = {
         link,
@@ -454,6 +613,9 @@
         anchor: undefined, // 'page' | 'viewport', decided on first sight.
         anchorOffset: null,
         anchorVersion: -1,
+        root: null,
+        unobstructed: false, // Answer from the last hit test.
+        testedAt: 0, // Pass number of that test; 0 = not tested since it appeared.
         lastRect: null,
         fixed: false,
         x: NaN, // Where the badge was last drawn, in its own coordinate system.
@@ -462,29 +624,43 @@
         viewY: 0,
         viewBottom: 0, // Bottom of the badge and its line of text.
       };
-      items.push(item);
+      items.add(item);
       itemByLink.set(link, item);
+      setWanted(item, Boolean(filter(item)));
+      return item;
+    }
+
+    // The link's verdict or contents changed.
+    function updateItem(item, { level, reasons, key }) {
+      if (!items.has(item)) return;
+      item.level = level;
+      item.reasons = reasons;
+      item.key = key;
+      item.anchorOffset = null; // Its text may have changed shape.
+      if (item.badge) item.badge.setVerdict(level, reasons);
+      if (tooltipItem === item) hideTooltip();
+      setWanted(item, Boolean(filter(item)));
+      syncWatchers();
+      schedule();
+    }
+
+    // The link left the page.
+    function remove(item) {
+      if (!items.delete(item)) return;
+      setWanted(item, false);
+      itemByLink.delete(item.link);
+      if (item.badge) item.badge.element.remove();
+      if (hoveredItem === item) hoveredItem = null;
+      if (tooltipItem === item) hideTooltip();
+      syncWatchers();
     }
 
     // Chooses which links get a badge. Only those are observed, so a page of
     // green links costs nothing in "risky" mode.
     function setFilter(predicate) {
-      for (const item of items) {
-        const wanted = Boolean(predicate(item));
-        if (wanted === item.wanted) continue;
-        item.wanted = wanted;
-        if (wanted) {
-          visibilityObserver.observe(item.link);
-          resizeObserver.observe(item.link);
-        } else {
-          visibilityObserver.unobserve(item.link);
-          resizeObserver.unobserve(item.link);
-          item.onScreen = false;
-          item.lastRect = null;
-          hide(item);
-          displayed.delete(item);
-        }
-      }
+      filter = predicate;
+      for (const item of items) setWanted(item, Boolean(filter(item)));
+      syncWatchers();
       schedule();
     }
 
@@ -498,24 +674,43 @@
       setTimeout(schedule, HIGHLIGHT_MS + 50);
     }
 
+    function getStats() {
+      return {
+        passes: stats.passes,
+        positionMs: Math.round(stats.positionMs * 10) / 10,
+        hitTests: stats.hitTests,
+        tracked: items.size,
+        onScreen: candidates.size,
+        drawn: displayed.size,
+        pollRunning: pollTimer !== 0,
+        watchingLayout,
+      };
+    }
+
     function destroy() {
       destroyed = true;
       cancelAnimationFrame(frame);
-      clearInterval(driftTimer);
       clearTimeout(hoverTimer);
+      clearTimeout(nudgeTimer);
+      syncWatchers(); // Stops the poll and the layout observer.
       visibilityObserver.disconnect();
       resizeObserver.disconnect();
       document.removeEventListener('scroll', schedule, listenerOptions);
       document.removeEventListener('transitionend', relayout, listenerOptions);
       document.removeEventListener('animationend', relayout, listenerOptions);
+      document.removeEventListener('load', relayout, listenerOptions);
+      document.removeEventListener('toggle', relayout, listenerOptions);
       document.removeEventListener('mousemove', onPointerMove, listenerOptions);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       docElement.removeEventListener('mouseleave', onPointerLeave);
       window.removeEventListener('resize', relayout, listenerOptions);
+      if (document.fonts) document.fonts.removeEventListener('loadingdone', relayout);
       host.remove();
     }
 
-    return { add, setFilter, highlight, destroy };
+    return { add, update: updateItem, remove, setFilter, highlight, nudge, getStats, destroy };
   }
 
+  Tripwire.OVERLAY_TAG = OVERLAY_TAG;
   Tripwire.createOverlay = createOverlay;
 })();

@@ -15,6 +15,10 @@
   // ---------------------------------------------------------------------------
 
   const CONFIG = {
+    // Set to true to log scan and positioning statistics to the page's
+    // DevTools console (enable the "Verbose" level to see them).
+    debug: false,
+
     // Score needed to reach each level. Below `suspicious` the link is "ok".
     thresholds: { suspicious: 30, dangerous: 70 },
     maxScore: 100,

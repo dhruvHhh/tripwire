@@ -78,14 +78,10 @@
     return item;
   }
 
-  function render() {
-    if (state) defaultMode = state.defaultMode;
-    const running = Boolean(state);
+  // What the page found: redrawn every time the content script reports a
+  // change, so links scanned after the popup opened show up.
+  function renderFindings() {
     const scanned = Boolean(state && state.counts);
-
-    $('host').textContent = running ? state.hostname : '';
-    $('unavailable').hidden = running;
-    $('off-note').hidden = !(running && state.mode === 'off');
 
     // The page's own verdict
     const pageLevel = scanned ? state.pageVerdict.level : 'ok';
@@ -108,6 +104,22 @@
       $('count-suspicious').parentElement.classList.toggle('nonzero', suspicious > 0);
     }
 
+    // Flagged links
+    const flagged = scanned ? state.flagged : [];
+    $('flagged').hidden = flagged.length === 0;
+    $('flagged-list').replaceChildren(...flagged.map(flaggedItem));
+  }
+
+  // The controls: redrawn only when a setting changes, so a live update never
+  // closes a dropdown the user has open.
+  function renderControls() {
+    if (state) defaultMode = state.defaultMode;
+    const running = Boolean(state);
+
+    $('host').textContent = running ? state.hostname : '';
+    $('unavailable').hidden = running;
+    $('off-note').hidden = !(running && state.mode === 'off');
+
     // Per-site mode and the one-off reveal
     $('site-controls').hidden = !running;
     if (running) {
@@ -126,17 +138,17 @@
         : 'Show badges on this page';
     }
 
-    // Flagged links
-    const flagged = scanned ? state.flagged : [];
-    $('flagged').hidden = flagged.length === 0;
-    $('flagged-list').replaceChildren(...flagged.map(flaggedItem));
-
     // Global default
     fillSelect(
       $('default-mode'),
       DEFAULT_MODE_CHOICES.map((mode) => [mode, MODES[mode]]),
       defaultMode,
     );
+  }
+
+  function render() {
+    renderControls();
+    renderFindings();
   }
 
   $('site-mode').addEventListener('change', async (event) => {
@@ -165,4 +177,19 @@
   state = await ask({ type: MESSAGES.GET_STATE });
   if (!state) defaultMode = await settings.loadDefaultMode().catch(() => settings.DEFAULT_MODE);
   render();
+
+  // Stay connected while open: the content script pushes its state whenever
+  // late-loading links change the counts.
+  if (state) {
+    try {
+      const port = chrome.tabs.connect(tabId, { name: settings.POPUP_PORT });
+      port.onMessage.addListener((pushed) => {
+        state = pushed;
+        renderFindings();
+      });
+      port.onDisconnect.addListener(() => void chrome.runtime.lastError);
+    } catch {
+      // No live updates; the popup still shows what it had when it opened.
+    }
+  }
 })();

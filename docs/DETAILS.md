@@ -355,8 +355,6 @@ The decision is `isDevelopmentInstall()` in [src/lib/blocklist.js](../src/lib/bl
 
 The demo page has to be served because content scripts don't run on `file://` pages. Clicking is disabled on it, except in the click-time warning section.
 
-[demo/popup-mockup.html](../demo/popup-mockup.html) is the static design mockup the popup and the click-time warning were built from. It is not part of the extension.
-
 ### Building the release zip
 
 ```
@@ -420,7 +418,7 @@ src/background/background.js  Service worker: toolbar count, welcome page, new t
 src/background/lists.js    Downloads and stores the blocklists, answers lookups
 test/                      Tests for every file in src/lib/, the demo page and the release zip
 test/fixtures/             A made-up blocklist for tests and the demo page
-demo/                      Demo page, a tiny server for it, and the design mockup
+demo/                      Demo page and a tiny server for it
 docs/screenshots/          Screenshots used in this README
 PRIVACY.md                 Privacy policy
 LICENSE                    MIT licence for the code

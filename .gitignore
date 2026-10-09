@@ -33,3 +33,7 @@ icon-preview.png
 *.orig
 scratch/
 tmp/
+
+# Local working files, never published
+demo/popup-mockup.html
+testing-notes.md

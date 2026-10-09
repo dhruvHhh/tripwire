@@ -26,3 +26,10 @@ icon-preview.png
 # Env / logs
 .env
 *.log
+
+# Scratch and temporary files
+*.tmp
+*.bak
+*.orig
+scratch/
+tmp/

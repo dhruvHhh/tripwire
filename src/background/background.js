@@ -12,8 +12,6 @@ importScripts('../lib/analyzer.js', '../lib/settings.js', '../lib/blocklist.js',
 
 const { MESSAGES, toolbarBadge, isFirstInstall, WELCOME_PAGE } = Tripwire.settings;
 
-console.log('Tripwire service worker started');
-
 // A first install only: not an update of Tripwire, and not a browser update.
 chrome.runtime.onInstalled.addListener((details) => {
   if (!isFirstInstall(details)) return;

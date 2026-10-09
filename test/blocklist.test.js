@@ -22,7 +22,6 @@ const {
   formatAge,
   listingReason,
   applyListing,
-  describePageListing,
   isDevelopmentInstall,
   describeSource,
   describeAll,
@@ -718,15 +717,6 @@ test('describeAll: one line for every list together', () => {
 // --- A page that is itself listed ------------------------------------------------
 
 const { analyzeLink, analyzePage } = require('../src/lib/analyzer.js');
-
-test('describePageListing: names the category and the list', () => {
-  const description = describePageListing(LISTING, NOW);
-  assert.equal(description.title, 'This page is listed as phishing by Phishing URL Blocklist');
-  assert.match(description.detail, /updated 3 hours ago/);
-
-  const malware = describePageListing({ ...LISTING, category: 'malware', name: 'Online Malicious URL Blocklist' }, NOW);
-  assert.equal(malware.title, 'This page is listed as malware by Online Malicious URL Blocklist');
-});
 
 // What the scanner does when the page's own address is listed: the page's
 // verdict becomes the listing, and links are analysed against that.

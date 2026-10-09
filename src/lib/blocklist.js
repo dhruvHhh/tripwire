@@ -537,14 +537,6 @@
     };
   }
 
-  // What the popup says when the page itself is on a list.
-  function describePageListing(match, now) {
-    return {
-      title: `This page is listed as ${match.category} by ${match.name}`,
-      detail: `The list was updated ${formatAge(now - match.publishedAt)}. Links that stay on this site are marked dangerous too.`,
-    };
-  }
-
   /**
    * Whether this is a development install, the only kind that loads the
    * bundled test list. The answer is yes only when everything says so:
@@ -630,7 +622,6 @@
     formatAge,
     listingReason,
     applyListing,
-    describePageListing,
     isDevelopmentInstall,
     describeSource,
     describeAll,

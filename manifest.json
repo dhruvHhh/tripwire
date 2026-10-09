@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tripwire",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "Flags risky links on web pages with a small badge, using checks and blocklists that run on your device.",
   "minimum_chrome_version": "114",
   "icons": {

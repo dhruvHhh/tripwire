@@ -130,17 +130,6 @@ body {
   background: var(--bg);
 }
 
-.btn--primary {
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--bg);
-}
-
-.btn--primary:hover {
-  background: var(--text);
-  opacity: 0.88;
-}
-
 /* A button that reads as a link. */
 .link-button {
   padding: 2px 4px;
